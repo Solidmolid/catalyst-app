@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self'; connect-src 'self' https://uytacdogqercenlgbpgb.supabase.co wss://uytacdogqercenlgbpgb.supabase.co; style-src 'self'; img-src 'self' data:; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'"
+/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="description" content="Catalyst – dein Depot, deine Meldungen und der Tages-Radar." />
+<meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Catalyst" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+<title>Catalyst</title>
+<link rel="stylesheet" href="styles.css?v=1" />
+</head>
+<body>
+
+<div id="splash" class="splash" role="status" aria-live="polite">
+  <img src="icons/icon.svg" alt="" class="splash-icon" />
+  <span>Catalyst wird geladen …</span>
+</div>
+
+<section id="auth" class="auth" hidden>
+  <form id="login-form" class="card auth-card" autocomplete="on">
+    <div class="brand"><img src="icons/icon.svg" alt="" /><span>Catalyst</span></div>
+    <h1>Anmelden</h1>
+    <p class="muted">Mit deinem Momentum-Konto. Deine Depot-Daten sieht nur dieses Konto.</p>
+    <label>E-Mail
+      <input id="login-email" type="email" autocomplete="username" required />
+    </label>
+    <label>Passwort
+      <input id="login-password" type="password" autocomplete="current-password" required />
+    </label>
+    <button id="login-submit" type="submit" class="primary">Anmelden</button>
+    <p id="login-error" class="error" role="alert" hidden></p>
+  </form>
+</section>
+
+<main id="app" class="app" hidden>
+  <header class="topbar">
+    <div class="brand"><img src="icons/icon.svg" alt="" /><span>Catalyst</span></div>
+    <div class="topbar-actions">
+      <button id="refresh" type="button" class="icon-btn" aria-label="Aktualisieren" title="Aktualisieren">↻</button>
+      <button id="logout" type="button" class="icon-btn" aria-label="Abmelden" title="Abmelden">⎋</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" data-view="depot" aria-selected="true">Depot</button>
+    <button type="button" role="tab" data-view="meldungen" aria-selected="false">Meldungen <span id="badge" class="badge" hidden></span></button>
+    <button type="button" role="tab" data-view="radar" aria-selected="false">Radar</button>
+  </nav>
+
+  <p id="load-error" class="error banner" role="alert" hidden></p>
+
+  <section id="view-depot" class="view" role="tabpanel"></section>
+  <section id="view-meldungen" class="view" role="tabpanel" hidden></section>
+  <section id="view-radar" class="view" role="tabpanel" hidden></section>
+
+  <footer class="disclaimer">
+    Nur Fakten, deine eigenen Marken und klar gekennzeichnete KI-Meinung —
+    keine Anlageberatung. Die Entscheidung liegt bei dir.
+  </footer>
+</main>
+
+<script src="vendor/supabase-2.110.3.js"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>
