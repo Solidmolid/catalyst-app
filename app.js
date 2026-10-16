@@ -17,7 +17,7 @@ const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_K
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
 });
 
-const state = { view: "depot", feed: {}, meldungen: [], loading: false, live: null };
+const state = { view: "depot", feed: {}, meldungen: [], trades: [], loading: false, live: null, formOpen: false };
 
 // --------------------------------------------------------------------------- //
 // Formatierung
@@ -93,6 +93,12 @@ function renderDepot() {
   const live = state.live?.ok ? `Live-Kurse ${fmtStamp(state.live.zeit)}` : `Stand: ${fmtStamp(entry.updated_at)}`;
   add(view, el("p", "stand", live));
 
+  const openBtn = el("button", "primary trade-open", state.formOpen ? "Eintragen abbrechen" : "＋ Kauf / Verkauf eintragen");
+  openBtn.type = "button";
+  openBtn.addEventListener("click", () => { state.formOpen = !state.formOpen; renderDepot(); });
+  view.appendChild(openBtn);
+  if (state.formOpen) view.appendChild(tradeForm(positions));
+
   const aktien = positions.filter((r) => r.typ !== "etf");
   const etfs = positions.filter((r) => r.typ === "etf");
   const sum = (rows, key) => rows.reduce((s, r) => s + (r[key] || 0), 0);
@@ -118,7 +124,7 @@ function renderDepot() {
     if (etfs.length) split.appendChild(el("span", null, `ETFs ${fmtEur(sum(etfs.filter((r) => r.wert_eur != null), "wert_eur"))}`));
     const cash = entry.payload.cash;
     if (cash && cash.eur != null) {
-      const hinweis = cash.geschaetzt ? " (abzgl. Sparpläne, geschätzt)" : cash.stand ? ` (Stand ${fmtDay(cash.stand)})` : "";
+      const hinweis = cash.geschaetzt ? " (inkl. Sparpläne/Einträge, geschätzt)" : cash.stand ? ` (Stand ${fmtDay(cash.stand)})` : "";
       split.appendChild(el("span", null, `Cash ${fmtEur(cash.eur)}${hinweis}`));
     }
     card.appendChild(split);
@@ -145,6 +151,8 @@ function renderDepot() {
       view.appendChild(card);
     }
   }
+
+  if (state.trades.length) view.appendChild(tradeList());
 
   if (positions.some((r) => r.geschaetzt)) {
     view.appendChild(el("p", "note", "Stückzahl/Einstand sind teils geschätzt — echte Werte in depot.yaml eintragen."));
@@ -174,6 +182,9 @@ function positionCard(r, mitTermin) {
     const neu = r.sparplan_neu ? ` · +${r.sparplan_neu} Ausführung(en) seit Auszug eingerechnet (geschätzt)` : "";
     card.appendChild(el("p", "pos-note", `Sparplan ${fmtEur(r.sparplan.betrag_eur)} am ${tage}${neu}`));
   }
+  if (r.app_eintraege) {
+    card.appendChild(el("p", "pos-note", `inkl. ${r.app_eintraege} Eintrag/Einträge aus der App`));
+  }
   const checks = state.feed.checks?.payload?.checks?.[r.ticker] || [];
   if (checks.length) card.appendChild(checkBlock(checks[0], checks.length - 1));
   return card;
@@ -197,6 +208,217 @@ function checkBlock(c, aeltere) {
     box.appendChild(det);
   }
   return box;
+}
+
+// --------------------------------------------------------------------------- //
+// Kauf / Verkauf eintragen (Tabelle catalyst_trades — nur dein Konto darf schreiben)
+// --------------------------------------------------------------------------- //
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function field(label, input) {
+  const l = el("label", "field");
+  add(l, el("span", null, label), input);
+  return l;
+}
+
+function input(type, attrs = {}) {
+  const i = document.createElement("input");
+  i.type = type;
+  for (const [k, v] of Object.entries(attrs)) i.setAttribute(k, v);
+  return i;
+}
+
+async function liveKurs(ticker) {
+  try {
+    const { data } = await client.functions.invoke("kurse", { body: { tickers: [ticker] } });
+    return data?.kurse?.[ticker]?.price_eur ?? null;
+  } catch { return null; }
+}
+
+function tradeForm(positions) {
+  const f = { art: "kauf", ticker: positions[0]?.ticker || "", name: positions[0]?.name || "", typ: positions[0]?.typ || "aktie" };
+  const card = el("form", "card trade-form");
+  card.appendChild(el("div", "section-title", "Kauf / Verkauf eintragen"));
+
+  // Kauf | Verkauf
+  const seg = el("div", "seg");
+  for (const [wert, text] of [["kauf", "Kauf"], ["verkauf", "Verkauf"]]) {
+    const b = el("button", `seg-btn${wert === f.art ? " is-active" : ""}`, text);
+    b.type = "button";
+    b.addEventListener("click", () => {
+      f.art = wert;
+      for (const x of seg.children) x.classList.toggle("is-active", x === b);
+    });
+    seg.appendChild(b);
+  }
+  card.appendChild(seg);
+
+  // Wertpapier: vorhandene Position oder neu suchen
+  const sel = document.createElement("select");
+  for (const r of positions) {
+    const o = el("option", null, `${r.name} (${r.ticker})`);
+    o.value = r.ticker;
+    sel.appendChild(o);
+  }
+  const neuOpt = el("option", null, "➕ Neue Aktie / ETF suchen …");
+  neuOpt.value = "__neu__";
+  sel.appendChild(neuOpt);
+  card.appendChild(field("Wertpapier", sel));
+
+  const neuBox = el("div", "neu-box");
+  neuBox.hidden = positions.length > 0;
+  const q = input("search", { placeholder: "Name, z. B. Rheinmetall", autocomplete: "off" });
+  const qBtn = el("button", "ghost", "Suchen");
+  qBtn.type = "button";
+  const treffer = el("div", "treffer");
+  const qRow = el("div", "row");
+  add(qRow, q, qBtn);
+  add(neuBox, qRow, treffer);
+  card.appendChild(neuBox);
+
+  const betrag = input("number", { min: "0.01", step: "0.01", inputmode: "decimal", placeholder: "z. B. 500", required: "" });
+  const kurs = input("number", { min: "0.0001", step: "any", inputmode: "decimal", placeholder: "Kurs je Stück in €", required: "" });
+  const datum = input("date", { value: todayIso(), max: todayIso(), required: "" });
+  const stueck = el("p", "pos-note", "");
+  add(card, field("Betrag (€)", betrag), field("Kurs (€ je Stück)", kurs), field("Datum", datum), stueck);
+
+  const updateStueck = () => {
+    const b = parseFloat(betrag.value), k = parseFloat(kurs.value);
+    stueck.textContent = b > 0 && k > 0 ? `= ${(b / k).toLocaleString("de-DE", { maximumFractionDigits: 6 })} Stück` : "";
+  };
+  betrag.addEventListener("input", updateStueck);
+  kurs.addEventListener("input", updateStueck);
+
+  const setKurs = async (ticker) => {
+    const vorhanden = positions.find((r) => r.ticker === ticker)?.kurs_eur;
+    const k = vorhanden ?? await liveKurs(ticker);
+    if (k) { kurs.value = k.toFixed(k < 10 ? 4 : 2); updateStueck(); }
+  };
+
+  sel.addEventListener("change", () => {
+    neuBox.hidden = sel.value !== "__neu__";
+    if (sel.value === "__neu__") { f.ticker = ""; q.focus(); return; }
+    const r = positions.find((x) => x.ticker === sel.value);
+    Object.assign(f, { ticker: r.ticker, name: r.name, typ: r.typ || "aktie" });
+    setKurs(r.ticker);
+  });
+
+  const suchen = async () => {
+    treffer.replaceChildren(el("p", "pos-note", "Suche …"));
+    const { data, error } = await client.functions.invoke("kurse", { body: { suche: q.value.trim() } });
+    treffer.replaceChildren();
+    if (error || !data?.treffer?.length) { treffer.appendChild(el("p", "pos-note", "Nichts gefunden.")); return; }
+    for (const t of data.treffer) {
+      const b = el("button", "treffer-btn");
+      b.type = "button";
+      add(b, el("b", null, t.name), el("span", "pos-ticker", `${t.ticker} · ${t.boerse}${t.typ === "etf" ? " · ETF" : ""}`));
+      b.addEventListener("click", () => {
+        Object.assign(f, { ticker: t.ticker, name: t.name, typ: t.typ });
+        treffer.replaceChildren(el("p", "pos-note", `Ausgewählt: ${t.name} (${t.ticker})`));
+        setKurs(t.ticker);
+      });
+      treffer.appendChild(b);
+    }
+  };
+  qBtn.addEventListener("click", suchen);
+  q.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); suchen(); } });
+
+  const err = el("p", "error");
+  err.hidden = true;
+  const save = el("button", "primary", "Speichern");
+  save.type = "submit";
+  add(card, save, err);
+
+  card.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    err.hidden = true;
+    const b = parseFloat(betrag.value), k = parseFloat(kurs.value);
+    if (!f.ticker) { err.textContent = "Bitte ein Wertpapier wählen bzw. suchen."; err.hidden = false; return; }
+    if (!(b > 0) || !(k > 0)) { err.textContent = "Betrag und Kurs müssen größer als 0 sein."; err.hidden = false; return; }
+    save.disabled = true;
+    save.textContent = "Wird gespeichert …";
+    const { error } = await client.from("catalyst_trades").insert({
+      art: f.art, ticker: f.ticker, name: f.name, typ: f.typ,
+      betrag_eur: b, kurs_eur: k, datum: datum.value || todayIso(),
+    });
+    save.disabled = false;
+    save.textContent = "Speichern";
+    if (error) { err.textContent = `Speichern fehlgeschlagen: ${error.message}`; err.hidden = false; return; }
+    state.formOpen = false;
+    await load();
+  });
+
+  if (f.ticker) setKurs(f.ticker);
+  return card;
+}
+
+function tradeList() {
+  const card = el("div", "card msg-list");
+  card.appendChild(el("div", "section-title trade-title", "Deine Einträge"));
+  const seit = state.feed.depot ? new Date(state.feed.depot.updated_at) : null;
+  for (const t of [...state.trades].reverse()) {
+    const item = el("div", "msg trade-item");
+    const txt = el("div");
+    const stk = (t.betrag_eur / t.kurs_eur).toLocaleString("de-DE", { maximumFractionDigits: 4 });
+    add(txt,
+      el("time", null, `${fmtDay(t.datum)} · ${t.art === "kauf" ? "Kauf" : "Verkauf"}`),
+      el("div", null, `${t.name || t.ticker}: ${fmtEur(t.betrag_eur)} zu ${fmtEur(t.kurs_eur)} (${stk} Stk.)`));
+    if (seit && new Date(t.created_at) > seit) txt.appendChild(el("small", "muted", "in der App schon eingerechnet — Catalyst übernimmt es beim nächsten Lauf"));
+    const del = el("button", "icon-btn small", "×");
+    del.type = "button";
+    del.title = "Eintrag löschen";
+    del.addEventListener("click", async () => {
+      if (!confirm(`Eintrag löschen?\n${t.name || t.ticker}, ${fmtEur(t.betrag_eur)}`)) return;
+      const { error } = await client.from("catalyst_trades").delete().eq("id", t.id);
+      if (error) { showError(`Löschen fehlgeschlagen: ${error.message}`); return; }
+      await load();
+    });
+    add(item, txt, del);
+    card.appendChild(item);
+  }
+  return card;
+}
+
+/** Einträge, die nach dem letzten Catalyst-Lauf dazukamen, sofort selbst einrechnen
+ *  (dieselbe Logik wie depot_watch.apply_trades). */
+function applyLocalTrades() {
+  const entry = state.feed.depot;
+  const p = entry?.payload;
+  if (!p) return;
+  const seit = new Date(entry.updated_at);
+  const rows = p.rows || (p.rows = []);
+  const neu = state.trades.filter((t) => new Date(t.created_at) > seit && (!p.stand || t.datum > p.stand));
+  for (const t of neu) {
+    const stk = t.betrag_eur / t.kurs_eur;
+    let r = rows.find((x) => x.art === "position" && x.ticker === t.ticker);
+    let delta = 0;
+    if (t.art === "kauf") {
+      if (!r) {
+        r = { art: "position", typ: t.typ || "aktie", ticker: t.ticker, name: t.name || t.ticker,
+          stueck: 0, einstand_eur: 0, kurs_eur: t.kurs_eur, tag_pct: null, regeln: {} };
+        rows.push(r);
+      }
+      r.stueck = (r.stueck || 0) + stk;
+      r.einstand_eur = (r.einstand_eur || 0) + t.betrag_eur;
+      delta = -t.betrag_eur;
+    } else if (t.art === "verkauf" && r) {
+      const vorher = r.stueck || 0;
+      const weg = Math.min(stk, vorher);
+      if (vorher > 0) r.einstand_eur = (r.einstand_eur || 0) * (1 - weg / vorher);
+      r.stueck = vorher - weg;
+      delta = weg * t.kurs_eur;
+      if (r.stueck <= 1e-9) rows.splice(rows.indexOf(r), 1);
+    } else continue;
+    r.app_eintraege = (r.app_eintraege || 0) + 1;
+    if (r.kurs_eur != null && r.stueck) {
+      r.wert_eur = r.kurs_eur * r.stueck;
+      r.gewinn_pct = r.einstand_eur ? (r.wert_eur / r.einstand_eur - 1) * 100 : null;
+    }
+    if (p.cash && p.cash.eur != null) { p.cash.eur += delta; p.cash.geschaetzt = true; }
+  }
 }
 
 // --------------------------------------------------------------------------- //
@@ -331,6 +553,10 @@ async function load() {
     if (meldungen.error) throw meldungen.error;
     state.feed = Object.fromEntries((feed.data || []).map((r) => [r.kind, r]));
     state.meldungen = meldungen.data || [];
+    const trades = await client.from("catalyst_trades").select("*")
+      .order("datum", { ascending: true }).order("created_at", { ascending: true });
+    state.trades = trades.error ? [] : (trades.data || []);
+    applyLocalTrades();
     try { await applyLiveQuotes(); } catch { state.live = { ok: false }; }
     if (!feed.data?.length && !meldungen.data?.length) {
       showError("Keine Daten für dieses Konto. Entweder gab es noch keinen Lauf, oder du bist mit einem anderen Konto angemeldet.");

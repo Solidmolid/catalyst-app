@@ -192,4 +192,29 @@ button { font: inherit; color: inherit; }
 .check details summary { cursor: pointer; color: var(--ink2); font-size: 13px; margin-top: 4px; }
 .check details p { white-space: pre-line; color: var(--ink2); margin: 6px 0 0; }
 
+/* --- Kauf / Verkauf eintragen --------------------------------------------- */
+.trade-open { width: 100%; margin-top: 0; }
+.trade-form { display: flex; flex-direction: column; gap: 12px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink2); }
+.trade-form input, .trade-form select {
+  font: inherit; font-size: 16px; padding: 11px 12px; border-radius: 12px; width: 100%;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
+.seg-btn { border: 0; background: transparent; padding: 9px; border-radius: 9px; font-weight: 600; color: var(--ink2); cursor: pointer; }
+.seg-btn.is-active { background: var(--card); color: var(--ink); }
+.neu-box { display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; gap: 8px; }
+.ghost { border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 0 14px; font-weight: 600; cursor: pointer; }
+.treffer { display: flex; flex-direction: column; gap: 6px; }
+.treffer-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 10px 12px; cursor: pointer;
+}
+.treffer-btn .pos-ticker { margin-left: 0; }
+.trade-title { margin: 8px 0 4px; }
+.trade-item { flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; }
+.trade-item small { display: block; font-size: 11px; margin-top: 2px; }
+.icon-btn.small { width: 32px; height: 32px; font-size: 16px; flex-shrink: 0; }
+
 .disclaimer { font-size: 12px; color: var(--ink3); text-align: center; margin: 28px 8px 8px; }
