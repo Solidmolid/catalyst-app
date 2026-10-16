@@ -117,7 +117,10 @@ function renderDepot() {
     if (aktien.length) split.appendChild(el("span", null, `Einzelaktien ${fmtEur(sum(aktien.filter((r) => r.wert_eur != null), "wert_eur"))}`));
     if (etfs.length) split.appendChild(el("span", null, `ETFs ${fmtEur(sum(etfs.filter((r) => r.wert_eur != null), "wert_eur"))}`));
     const cash = entry.payload.cash;
-    if (cash && cash.eur != null) split.appendChild(el("span", null, `Cash ${fmtEur(cash.eur)}${cash.stand ? ` (Stand ${fmtDay(cash.stand)})` : ""}`));
+    if (cash && cash.eur != null) {
+      const hinweis = cash.geschaetzt ? " (abzgl. Sparpläne, geschätzt)" : cash.stand ? ` (Stand ${fmtDay(cash.stand)})` : "";
+      split.appendChild(el("span", null, `Cash ${fmtEur(cash.eur)}${hinweis}`));
+    }
     card.appendChild(split);
     view.appendChild(card);
   }
