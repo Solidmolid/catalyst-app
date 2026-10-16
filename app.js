@@ -17,7 +17,7 @@ const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_K
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
 });
 
-const state = { view: "depot", feed: {}, meldungen: [], loading: false };
+const state = { view: "depot", feed: {}, meldungen: [], loading: false, live: null };
 
 // --------------------------------------------------------------------------- //
 // Formatierung
@@ -90,7 +90,8 @@ function renderDepot() {
     return;
   }
 
-  add(view, el("p", "stand", `Stand: ${fmtStamp(entry.updated_at)}`));
+  const live = state.live?.ok ? `Live-Kurse ${fmtStamp(state.live.zeit)}` : `Stand: ${fmtStamp(entry.updated_at)}`;
+  add(view, el("p", "stand", live));
 
   const aktien = positions.filter((r) => r.typ !== "etf");
   const etfs = positions.filter((r) => r.typ === "etf");
@@ -165,7 +166,39 @@ function positionCard(r, mitTermin) {
         r.termin ? `${fmtDay(r.termin)} · ${inDays(r.termin)}` : "—", "")
       : cell("Einstand", fmtEur(r.einstand_eur), ""));
   add(card, head, grid);
+  if (r.sparplan) {
+    const tage = (r.sparplan.tage || []).map((t) => `${t}.`).join(" & ");
+    const neu = r.sparplan_neu ? ` · +${r.sparplan_neu} Ausführung(en) seit Auszug eingerechnet (geschätzt)` : "";
+    card.appendChild(el("p", "pos-note", `Sparplan ${fmtEur(r.sparplan.betrag_eur)} am ${tage}${neu}`));
+  }
   return card;
+}
+
+// --------------------------------------------------------------------------- //
+// Live-Kurse (Supabase-Funktion "kurse") — rechnet Werte mit aktuellen Kursen neu.
+// Fällt die Funktion aus, bleiben einfach die Werte des letzten Catalyst-Laufs stehen.
+// --------------------------------------------------------------------------- //
+async function applyLiveQuotes() {
+  const entry = state.feed.depot;
+  const rows = entry?.payload?.rows || [];
+  const tickers = [...new Set(rows.map((r) => r.ticker).filter(Boolean))];
+  if (!tickers.length) return;
+  const { data, error } = await client.functions.invoke("kurse", { body: { tickers } });
+  if (error || !data?.kurse) {
+    state.live = { ok: false };
+    return;
+  }
+  for (const r of rows) {
+    const q = data.kurse[r.ticker];
+    if (!q || q.price_eur == null) continue;
+    r.kurs_eur = q.price_eur;
+    r.tag_pct = q.day_pct ?? r.tag_pct;
+    if (r.art === "position" && r.stueck) {
+      r.wert_eur = q.price_eur * r.stueck;
+      r.gewinn_pct = r.einstand_eur ? (r.wert_eur / r.einstand_eur - 1) * 100 : null;
+    }
+  }
+  state.live = { ok: true, zeit: data.zeit || new Date().toISOString() };
 }
 
 function cell(label, value, cls) {
@@ -268,6 +301,7 @@ async function load() {
     if (meldungen.error) throw meldungen.error;
     state.feed = Object.fromEntries((feed.data || []).map((r) => [r.kind, r]));
     state.meldungen = meldungen.data || [];
+    try { await applyLiveQuotes(); } catch { state.live = { ok: false }; }
     if (!feed.data?.length && !meldungen.data?.length) {
       showError("Keine Daten für dieses Konto. Entweder gab es noch keinen Lauf, oder du bist mit einem anderen Konto angemeldet.");
     }

@@ -145,6 +145,7 @@ button { font: inherit; color: inherit; }
 .pos-grid small { color: var(--ink3); font-size: 11px; }
 .pos-grid b { font-weight: 600; font-size: 14px; }
 .note { font-size: 12px; color: var(--ink3); margin: 0 2px; }
+.pos-note { font-size: 12px; color: var(--ink3); margin: 10px 0 0; }
 
 .alert {
   border-radius: 12px; padding: 12px 14px; background: var(--tint-neutral);
