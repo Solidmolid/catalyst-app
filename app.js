@@ -174,7 +174,29 @@ function positionCard(r, mitTermin) {
     const neu = r.sparplan_neu ? ` · +${r.sparplan_neu} Ausführung(en) seit Auszug eingerechnet (geschätzt)` : "";
     card.appendChild(el("p", "pos-note", `Sparplan ${fmtEur(r.sparplan.betrag_eur)} am ${tage}${neu}`));
   }
+  const checks = state.feed.checks?.payload?.checks?.[r.ticker] || [];
+  if (checks.length) card.appendChild(checkBlock(checks[0], checks.length - 1));
   return card;
+}
+
+const ANLASS = { vor: "vor dem Termin", nach: "nach dem Termin", bewegung: "starke Kursbewegung" };
+
+/** Neuester KI-Depot-Check zu einer Position: Lage-Einordnung, kein Kauf-/Verkaufsrat. */
+function checkBlock(c, aeltere) {
+  const lbl = (c.label || "").toLowerCase();
+  const box = el("div", `check ${lbl}`);
+  const head = el("div", "check-head");
+  add(head,
+    el("span", "check-title", `KI-Depot-Check · ${ANLASS[c.anlass] || c.anlass} · ${fmtDay(c.erstellt)}`),
+    c.label ? el("span", `label ${lbl}`, c.label) : null);
+  add(box, head, el("div", null, c.kurz));
+  if (c.text) {
+    const det = el("details");
+    add(det, el("summary", null, aeltere ? `Ganze Einordnung (+${aeltere} ältere)` : "Ganze Einordnung"),
+      el("p", null, c.text));
+    box.appendChild(det);
+  }
+  return box;
 }
 
 // --------------------------------------------------------------------------- //
@@ -257,16 +279,21 @@ function renderRadar() {
   add(view, el("p", "stand", `Tages-Radar vom ${fmtDay(p.datum)} · ${p.n_events ?? "?"} Events im Blick · aktualisiert ${fmtStamp(entry.updated_at)}`));
 
   if (!(p.picks || []).length) view.appendChild(empty("Heute keine eingeordneten Picks."));
+  const neuestes = (p.picks || []).reduce((m, k) => (k.seit && k.seit > m ? k.seit : m), "");
   for (const k of p.picks || []) {
     const lbl = (k.label || "").toLowerCase();
     const card = el("div", `card pick ${lbl}`);
     const head = el("div", "pick-head");
     const name = el("div", "pos-name", k.asset);
     if (k.ticker) name.appendChild(el("span", "pos-ticker", k.ticker));
-    add(head, name, k.label ? el("span", `label ${lbl}`, k.label) : null);
-    add(card, head,
-      el("div", "pick-meta", `${k.typ}${k.datum ? ` · ${fmtDay(k.datum)} · ${inDays(k.datum)}` : ""}`),
-      el("div", null, k.kurz));
+    const badges = el("div", "badges");
+    if (k.seit && k.seit === neuestes) badges.appendChild(el("span", "tag neu", "NEU"));
+    if (k.im_depot) badges.appendChild(el("span", "tag depot", "Im Depot"));
+    if (k.label) badges.appendChild(el("span", `label ${lbl}`, k.label));
+    add(head, name, badges);
+    const meta = `${k.typ}${k.datum ? ` · ${fmtDay(k.datum)} · ${inDays(k.datum)}` : ""}`
+      + (k.seit ? ` · eingeordnet ${fmtDay(k.seit)}` : "");
+    add(card, head, el("div", "pick-meta", meta), el("div", null, k.kurz));
     if (k.text) {
       const det = el("details");
       add(det, el("summary", null, "Ganze Einordnung"), el("p", null, k.text));
