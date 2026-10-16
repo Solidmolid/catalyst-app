@@ -92,43 +92,42 @@ function renderDepot() {
 
   add(view, el("p", "stand", `Stand: ${fmtStamp(entry.updated_at)}`));
 
+  const aktien = positions.filter((r) => r.typ !== "etf");
+  const etfs = positions.filter((r) => r.typ === "etf");
+  const sum = (rows, key) => rows.reduce((s, r) => s + (r[key] || 0), 0);
+
   // Summe über alle Positionen mit Kurs
   const priced = positions.filter((r) => r.wert_eur != null);
   if (priced.length) {
-    const wert = priced.reduce((s, r) => s + r.wert_eur, 0);
-    const einstand = priced.reduce((s, r) => s + (r.einstand_eur || 0), 0);
+    const wert = sum(priced, "wert_eur");
+    const einstand = sum(priced, "einstand_eur");
     const heute = priced.reduce((s, r) => (r.tag_pct == null ? s : s + r.wert_eur - r.wert_eur / (1 + r.tag_pct / 100)), 0);
     const gesamtPct = einstand ? (wert / einstand - 1) * 100 : null;
     const card = el("div", "card");
     add(card,
-      el("div", "section-title", "Einzelaktien gesamt"),
+      el("div", "section-title", "Depot gesamt"),
       el("div", "summary-value", fmtEur(wert)));
     const row = el("div", "summary-row");
     const a = el("span", trend(gesamtPct)); add(a, el("b", null, fmtPct(gesamtPct)), document.createTextNode(" seit Einstand"));
     const b = el("span", trend(heute)); add(b, el("b", null, `${heute >= 0 ? "+" : "−"}${fmtEur(Math.abs(heute))}`), document.createTextNode(" heute"));
     add(row, a, b);
     add(card, row);
+    const split = el("div", "summary-split");
+    if (aktien.length) split.appendChild(el("span", null, `Einzelaktien ${fmtEur(sum(aktien.filter((r) => r.wert_eur != null), "wert_eur"))}`));
+    if (etfs.length) split.appendChild(el("span", null, `ETFs ${fmtEur(sum(etfs.filter((r) => r.wert_eur != null), "wert_eur"))}`));
+    const cash = entry.payload.cash;
+    if (cash && cash.eur != null) split.appendChild(el("span", null, `Cash ${fmtEur(cash.eur)}${cash.stand ? ` (Stand ${fmtDay(cash.stand)})` : ""}`));
+    card.appendChild(split);
     view.appendChild(card);
   }
 
   // Aktive Hinweise (deine Marken, große Bewegung, naher Termin)
   for (const h of entry.payload.hinweise || []) view.appendChild(el("div", "alert", h.text));
 
-  for (const r of positions) {
-    const card = el("div", "card");
-    const head = el("div", "pos-head");
-    const name = el("div", "pos-name", r.name);
-    name.appendChild(el("span", "pos-ticker", r.ticker));
-    add(head, name, el("div", "pos-value", fmtEur(r.wert_eur)));
-    const grid = el("div", "pos-grid");
-    add(grid,
-      cell("seit Einstand", fmtPct(r.gewinn_pct), trend(r.gewinn_pct)),
-      cell("heute", fmtPct(r.tag_pct), trend(r.tag_pct)),
-      cell(r.termin_art ? `nächste ${r.termin_art}` : "nächster Termin",
-        r.termin ? `${fmtDay(r.termin)} · ${inDays(r.termin)}` : "—", ""));
-    add(card, head, grid);
-    view.appendChild(card);
-  }
+  if (aktien.length) view.appendChild(el("div", "section-title", "Einzelaktien"));
+  for (const r of aktien) view.appendChild(positionCard(r, true));
+  if (etfs.length) view.appendChild(el("div", "section-title", "ETFs"));
+  for (const r of etfs) view.appendChild(positionCard(r, false));
 
   if (watch.length) {
     view.appendChild(el("div", "section-title", "Watchlist"));
@@ -149,6 +148,24 @@ function renderDepot() {
   if (!rows.some((r) => r.regeln && Object.keys(r.regeln).length)) {
     view.appendChild(el("p", "note", "Noch keine eigenen Marken gesetzt — gemeldet werden nur große Tagesbewegungen und nahe Termine."));
   }
+}
+
+function positionCard(r, mitTermin) {
+  const card = el("div", "card");
+  const head = el("div", "pos-head");
+  const name = el("div", "pos-name", r.name);
+  name.appendChild(el("span", "pos-ticker", r.ticker));
+  add(head, name, el("div", "pos-value", fmtEur(r.wert_eur)));
+  const grid = el("div", "pos-grid");
+  add(grid,
+    cell("seit Einstand", fmtPct(r.gewinn_pct), trend(r.gewinn_pct)),
+    cell("heute", fmtPct(r.tag_pct), trend(r.tag_pct)),
+    mitTermin
+      ? cell(r.termin_art ? `nächste ${r.termin_art}` : "nächster Termin",
+        r.termin ? `${fmtDay(r.termin)} · ${inDays(r.termin)}` : "—", "")
+      : cell("Einstand", fmtEur(r.einstand_eur), ""));
+  add(card, head, grid);
+  return card;
 }
 
 function cell(label, value, cls) {

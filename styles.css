@@ -129,6 +129,10 @@ button { font: inherit; color: inherit; }
 .summary-value { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin: 2px 0 6px; }
 .summary-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; }
 .summary-row span b { font-weight: 600; }
+.summary-split {
+  display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--line); font-size: 13px; color: var(--ink2);
+}
 
 .pos-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .pos-name { font-weight: 700; font-size: 16px; }
