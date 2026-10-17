@@ -132,6 +132,12 @@ button { font: inherit; color: inherit; }
 .stand { font-size: 12px; color: var(--ink3); margin: 0 2px; }
 .empty { text-align: center; color: var(--ink3); padding: 28px 16px; }
 
+/* Radar-Kopf: links Umfang, rechts wann zuletzt aktualisiert */
+.radar-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.radar-zeit { margin-left: auto; text-align: right; }
+.radar-zeit.alt { color: var(--neutral); font-weight: 600; }
+.hint { padding: 12px 14px; background: var(--tint-neutral); border-color: transparent; font-size: 14px; }
+
 .up { color: var(--up); }
 .down { color: var(--down); }
 

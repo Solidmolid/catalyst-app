@@ -47,6 +47,19 @@ function fmtStamp(ts) {
   return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+// Routine läuft alle 3 Std. (plus ein paar Minuten Versatz) -- ab 4 Std. fehlt ein Lauf.
+const RADAR_ALT_STD = 4;
+
+function fmtAgo(ts) {
+  const min = Math.floor((Date.now() - new Date(ts)) / 60000);
+  if (min < 2) return "gerade eben";
+  if (min < 60) return `vor ${min} Min.`;
+  const std = Math.floor(min / 60);
+  if (std < 24) return `vor ${std} Std.`;
+  const tage = Math.floor(std / 24);
+  return tage === 1 ? "vor 1 Tag" : `vor ${tage} Tagen`;
+}
+
 function daysUntil(iso) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const d = new Date(`${iso}T00:00:00`);
@@ -737,10 +750,17 @@ function renderRadar() {
   const entry = state.feed.radar;
   const p = entry?.payload;
   if (!p) {
-    view.appendChild(empty("Noch kein Tages-Radar. Er kommt mit dem nächsten täglichen Lauf."));
+    view.appendChild(empty("Noch kein Tages-Radar. Er kommt mit dem nächsten Lauf der Routine (alle 3 Std.)."));
     return;
   }
-  add(view, el("p", "stand", `Tages-Radar vom ${fmtDay(p.datum)} · ${p.n_events ?? "?"} Events im Blick · aktualisiert ${fmtStamp(entry.updated_at)}`));
+  // Der Radar kommt von der Routine in der Claude Desktop-App (alle 3 Std.). Bleibt
+  // ein Lauf aus, ist meist die App bzw. der PC aus -- dann sagen wir das.
+  const alt = (Date.now() - new Date(entry.updated_at)) / 3600000 >= RADAR_ALT_STD;
+  const kopf = el("div", "radar-head");
+  add(kopf, el("span", "stand", `${p.n_events ?? "?"} Events im Blick`),
+    el("span", `stand radar-zeit${alt ? " alt" : ""}`, `Letzte Aktualisierung ${fmtAgo(entry.updated_at)}`));
+  view.appendChild(kopf);
+  if (alt) view.appendChild(el("div", "card hint", "Öffne die Claude Desktop-App am PC, um zu aktualisieren — der Radar läuft dort alle 3 Stunden."));
 
   if (!(p.picks || []).length) view.appendChild(empty("Heute keine eingeordneten Picks."));
   const neuestes = (p.picks || []).reduce((m, k) => (k.seit && k.seit > m ? k.seit : m), "");
