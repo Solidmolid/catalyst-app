@@ -17,6 +17,11 @@
   --tint-risiko: #fbe9e7;
   --radius: 16px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Diagramme: geprüfte Serienfarben (validate_palette, hell gegen #ffffff) */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --grid: #e1e0d9;
+  --axis-line: #c3c2b7;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -36,6 +41,11 @@
     --tint-chance: #15291e;
     --tint-neutral: #2d2215;
     --tint-risiko: #301a18;
+    /* dunkle Stufen derselben Farben (validate_palette, dunkel gegen #181b21) */
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --grid: #2c2c2a;
+    --axis-line: #383835;
   }
 }
 
@@ -191,6 +201,59 @@ button { font: inherit; color: inherit; }
 .check-title { font-size: 11px; color: var(--ink3); font-weight: 600; }
 .check details summary { cursor: pointer; color: var(--ink2); font-size: 13px; margin-top: 4px; }
 .check details p { white-space: pre-line; color: var(--ink2); margin: 6px 0 0; }
+
+/* --- Verlauf (Kurve) ------------------------------------------------------ */
+.chart-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.chart-sub { margin: 2px 0 0; }
+.range-seg { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); }
+.range-seg button {
+  border: 0; background: transparent; padding: 5px 8px; border-radius: 7px; font-size: 12px;
+  font-weight: 600; color: var(--ink2); cursor: pointer;
+}
+.range-seg button.is-active { background: var(--card); color: var(--ink); }
+.chart-legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 10px 0 2px; font-size: 12px; color: var(--ink2); }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; flex-shrink: 0; }
+.k-wert { background: var(--series-1); }
+.k-einstand { background: var(--series-2); }
+.chart-holder { position: relative; margin: 0 -4px; }
+.chart-holder svg { display: block; max-width: 100%; touch-action: pan-y; outline: none; }
+.chart-holder svg:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; border-radius: 6px; }
+.chart-holder .grid { stroke: var(--grid); stroke-width: 1; }
+.chart-holder .axis { fill: var(--ink3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart-holder .area-wert { fill: var(--series-1); opacity: 0.1; }
+.chart-holder .line-wert, .chart-holder .line-einstand { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-holder .line-wert { stroke: var(--series-1); }
+.chart-holder .line-einstand { stroke: var(--series-2); }
+.chart-holder .dot-wert, .chart-holder .dot-einstand { stroke: var(--card); stroke-width: 2; }
+.chart-holder .dot-wert { fill: var(--series-1); }
+.chart-holder .dot-einstand { fill: var(--series-2); }
+.chart-holder .cross { stroke: var(--axis-line); stroke-width: 1; }
+.chart-holder .leader { stroke: var(--ink3); stroke-width: 1; }
+.chart-holder .end-label { fill: var(--ink2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart-holder .end-label.strong { fill: var(--ink); font-weight: 600; }
+.chart-tip {
+  position: absolute; top: 6px; pointer-events: none; min-width: 150px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+.tip-date { color: var(--ink3); margin-bottom: 4px; }
+.tip-row { display: flex; align-items: center; gap: 6px; }
+.tip-row b { font-variant-numeric: tabular-nums; }
+.tip-diff { margin-top: 4px; font-weight: 600; }
+.chart-table summary { cursor: pointer; font-size: 12px; color: var(--ink2); margin-top: 6px; }
+.chart-table table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.chart-table th, .chart-table td { text-align: right; padding: 4px 2px; border-bottom: 1px solid var(--line); }
+.chart-table th:first-child, .chart-table td:first-child { text-align: left; }
+.chart-table th { color: var(--ink3); font-weight: 600; }
+
+/* --- Aufteilung ----------------------------------------------------------- */
+.share-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.share-row { display: grid; grid-template-columns: minmax(0, 42%) 1fr auto; align-items: center; gap: 10px; font-size: 13px; }
+.share-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.share-track { height: 10px; }
+.share-bar { height: 10px; background: var(--series-1); border-radius: 0 4px 4px 0; }
+.share-val { font-variant-numeric: tabular-nums; color: var(--ink2); min-width: 46px; text-align: right; }
 
 /* --- Kauf / Verkauf eintragen --------------------------------------------- */
 .trade-open { width: 100%; margin-top: 0; }

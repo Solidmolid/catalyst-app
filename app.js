@@ -17,7 +17,8 @@ const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_K
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
 });
 
-const state = { view: "depot", feed: {}, meldungen: [], trades: [], loading: false, live: null, formOpen: false };
+const state = { view: "depot", feed: {}, meldungen: [], trades: [], verlauf: [], range: "Max",
+  depotWert: 0, loading: false, live: null, formOpen: false };
 
 // --------------------------------------------------------------------------- //
 // Formatierung
@@ -28,6 +29,9 @@ const pctFmt = new Intl.NumberFormat("de-DE", {
 });
 
 function fmtEur(n) { return n == null ? "—" : eur.format(n); }
+const shareFmt = new Intl.NumberFormat("de-DE", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
+function fmtShare(x) { return x == null || !isFinite(x) ? "—" : shareFmt.format(x); }
+const eur0 = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 function fmtPct(n) { return n == null ? "—" : `${pctFmt.format(n)} %`; }
 function trend(n) { return n == null ? "" : n >= 0 ? "up" : "down"; }
 
@@ -105,6 +109,7 @@ function renderDepot() {
 
   // Summe über alle Positionen mit Kurs
   const priced = positions.filter((r) => r.wert_eur != null);
+  state.depotWert = sum(priced, "wert_eur");
   if (priced.length) {
     const wert = sum(priced, "wert_eur");
     const einstand = sum(priced, "einstand_eur");
@@ -120,8 +125,12 @@ function renderDepot() {
     add(row, a, b);
     add(card, row);
     const split = el("div", "summary-split");
-    if (aktien.length) split.appendChild(el("span", null, `Einzelaktien ${fmtEur(sum(aktien.filter((r) => r.wert_eur != null), "wert_eur"))}`));
-    if (etfs.length) split.appendChild(el("span", null, `ETFs ${fmtEur(sum(etfs.filter((r) => r.wert_eur != null), "wert_eur"))}`));
+    const teil = (rows) => {
+      const w = sum(rows.filter((r) => r.wert_eur != null), "wert_eur");
+      return `${fmtEur(w)} · ${fmtShare(w / wert)}`;
+    };
+    if (aktien.length) split.appendChild(el("span", null, `Einzelaktien ${teil(aktien)}`));
+    if (etfs.length) split.appendChild(el("span", null, `ETFs ${teil(etfs)}`));
     const cash = entry.payload.cash;
     if (cash && cash.eur != null) {
       const hinweis = cash.geschaetzt ? " (inkl. Sparpläne/Einträge, geschätzt)" : cash.stand ? ` (Stand ${fmtDay(cash.stand)})` : "";
@@ -131,8 +140,12 @@ function renderDepot() {
     view.appendChild(card);
   }
 
+  if (state.verlauf.length > 1) view.appendChild(verlaufCard());
+
   // Aktive Hinweise (deine Marken, große Bewegung, naher Termin)
   for (const h of entry.payload.hinweise || []) view.appendChild(el("div", "alert", h.text));
+
+  if (priced.length > 1) view.appendChild(aufteilungCard(priced));
 
   if (aktien.length) view.appendChild(el("div", "section-title", "Einzelaktien"));
   for (const r of aktien) view.appendChild(positionCard(r, true));
@@ -166,7 +179,8 @@ function positionCard(r, mitTermin) {
   const card = el("div", "card");
   const head = el("div", "pos-head");
   const name = el("div", "pos-name", r.name);
-  name.appendChild(el("span", "pos-ticker", r.ticker));
+  const anteil = state.depotWert && r.wert_eur != null ? ` · ${fmtShare(r.wert_eur / state.depotWert)}` : "";
+  name.appendChild(el("span", "pos-ticker", `${r.ticker}${anteil}`));
   add(head, name, el("div", "pos-value", fmtEur(r.wert_eur)));
   const grid = el("div", "pos-grid");
   add(grid,
@@ -188,6 +202,221 @@ function positionCard(r, mitTermin) {
   const checks = state.feed.checks?.payload?.checks?.[r.ticker] || [];
   if (checks.length) card.appendChild(checkBlock(checks[0], checks.length - 1));
   return card;
+}
+
+// --------------------------------------------------------------------------- //
+// Aufteilung: Anteil je Position am Depotwert (ohne Cash) — sortierte Balken
+// --------------------------------------------------------------------------- //
+function aufteilungCard(priced) {
+  const total = priced.reduce((s, r) => s + r.wert_eur, 0);
+  const rows = [...priced].sort((a, b) => b.wert_eur - a.wert_eur);
+  const max = rows[0].wert_eur / total;
+  const card = el("div", "card");
+  add(card, el("div", "section-title", "Aufteilung"),
+    el("p", "pos-note chart-sub", "Anteil am Depotwert, ohne Cash"));
+  const list = el("div", "share-list");
+  for (const r of rows) {
+    const share = r.wert_eur / total;
+    const row = el("div", "share-row");
+    row.title = `${r.name}: ${fmtEur(r.wert_eur)} · ${fmtShare(share)}`;
+    const track = el("div", "share-track");
+    const bar = el("div", "share-bar");
+    bar.style.width = `${Math.max(1, (share / max) * 100)}%`;
+    track.appendChild(bar);
+    add(row, el("span", "share-name", r.name), track, el("span", "share-val", fmtShare(share)));
+    list.appendChild(row);
+  }
+  card.appendChild(list);
+  return card;
+}
+
+// --------------------------------------------------------------------------- //
+// Verlauf: Depotwert und Einstand über die Zeit (eine y-Achse, beides in €)
+// --------------------------------------------------------------------------- //
+const RANGES = [["1W", 7], ["1M", 31], ["3M", 92], ["Max", 0]];
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svg(tag, attrs = {}) {
+  const n = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+
+function verlaufPunkte() {
+  const tage = RANGES.find(([k]) => k === state.range)?.[1] || 0;
+  if (!tage) return state.verlauf;
+  const grenze = new Date(Date.now() - tage * 86400000).toISOString().slice(0, 10);
+  const pts = state.verlauf.filter((p) => p.datum >= grenze);
+  return pts.length > 1 ? pts : state.verlauf.slice(-2);
+}
+
+function niceTicks(lo, hi, n = 4) {
+  const span = hi - lo || Math.abs(hi) || 1;
+  const raw = span / n;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw);
+  const start = Math.floor(lo / step) * step;
+  const ticks = [];
+  for (let v = start; v <= hi + step * 0.001; v += step) ticks.push(v);
+  if (ticks[ticks.length - 1] < hi) ticks.push(ticks[ticks.length - 1] + step);
+  return ticks;
+}
+
+function verlaufCard() {
+  const card = el("div", "card chart-card");
+  const pts = verlaufPunkte();
+  const last = pts[pts.length - 1];
+  const head = el("div", "chart-head");
+  const titel = el("div");
+  add(titel, el("div", "section-title", "Verlauf"),
+    el("p", "pos-note chart-sub", `Depotwert ${fmtEur(last.wert)} · eingezahlt ${fmtEur(last.einstand)}`));
+  const seg = el("div", "range-seg");
+  for (const [key] of RANGES) {
+    const b = el("button", key === state.range ? "is-active" : "", key);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(key === state.range));
+    b.addEventListener("click", () => { state.range = key; renderDepot(); });
+    seg.appendChild(b);
+  }
+  add(head, titel, seg);
+
+  const legend = el("div", "chart-legend");
+  for (const [cls, text] of [["k-wert", "Depotwert"], ["k-einstand", "Eingezahlt (Einstand)"]]) {
+    const item = el("span", "legend-item");
+    add(item, el("span", `legend-key ${cls}`), document.createTextNode(text));
+    legend.appendChild(item);
+  }
+
+  const holder = el("div", "chart-holder");
+  const tip = el("div", "chart-tip");
+  tip.hidden = true;
+  holder.appendChild(tip);
+  add(card, head, legend, holder, verlaufTabelle(pts));
+  requestAnimationFrame(() => drawVerlauf(holder, tip, pts));
+  return card;
+}
+
+function drawVerlauf(holder, tip, pts) {
+  holder.querySelector("svg")?.remove();
+  const W = Math.max(280, holder.clientWidth || 320);
+  const H = 210;
+  const pad = { l: 46, r: 72, t: 10, b: 24 };
+  const iw = W - pad.l - pad.r;
+  const ih = H - pad.t - pad.b;
+  const werte = pts.flatMap((p) => [p.wert, p.einstand]);
+  const ticks = niceTicks(Math.min(...werte), Math.max(...werte), 4);
+  const lo = ticks[0], hi = ticks[ticks.length - 1];
+  const x = (i) => pad.l + (pts.length === 1 ? iw / 2 : (i / (pts.length - 1)) * iw);
+  const y = (v) => pad.t + ih - ((v - lo) / (hi - lo || 1)) * ih;
+
+  const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", tabindex: "0",
+    "aria-label": `Verlauf: Depotwert ${fmtEur(pts[pts.length - 1].wert)}, eingezahlt ${fmtEur(pts[pts.length - 1].einstand)}` });
+
+  for (const t of ticks) {
+    root.appendChild(svg("line", { x1: pad.l, x2: pad.l + iw, y1: y(t), y2: y(t), class: "grid" }));
+    const lab = svg("text", { x: pad.l - 6, y: y(t) + 4, "text-anchor": "end", class: "axis" });
+    lab.textContent = eur0.format(t).replace(/\s?€/, "");
+    root.appendChild(lab);
+  }
+  const xl = (i, anchor) => {
+    const t = svg("text", { x: x(i), y: H - 6, "text-anchor": anchor, class: "axis" });
+    t.textContent = fmtDay(pts[i].datum);
+    root.appendChild(t);
+  };
+  xl(0, "start");
+  if (pts.length > 2) xl(Math.floor((pts.length - 1) / 2), "middle");
+  xl(pts.length - 1, "end");
+
+  const linie = (key) => pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join("");
+  root.appendChild(svg("path", { d: `${linie("wert")}L${x(pts.length - 1)},${pad.t + ih}L${x(0)},${pad.t + ih}Z`, class: "area-wert" }));
+  root.appendChild(svg("path", { d: linie("einstand"), class: "line-einstand" }));
+  root.appendChild(svg("path", { d: linie("wert"), class: "line-wert" }));
+
+  // Werte am Linienende (Text in Text-Farbe, nie in der Serienfarbe)
+  const n = pts.length - 1;
+  let yW = y(pts[n].wert), yE = y(pts[n].einstand);
+  const ankerW = yW, ankerE = yE;
+  if (Math.abs(yW - yE) < 14) {
+    if (yW <= yE) { yW -= (14 - (yE - yW)) / 2; yE = yW + 14; } else { yE -= (14 - (yW - yE)) / 2; yW = yE + 14; }
+    root.appendChild(svg("line", { x1: x(n) + 2, y1: ankerW, x2: x(n) + 8, y2: yW, class: "leader" }));
+    root.appendChild(svg("line", { x1: x(n) + 2, y1: ankerE, x2: x(n) + 8, y2: yE, class: "leader" }));
+  }
+  for (const [key, yy, cls] of [["wert", yW, "end-label strong"], ["einstand", yE, "end-label"]]) {
+    const t = svg("text", { x: x(n) + 10, y: yy + 4, class: cls });
+    t.textContent = eur0.format(pts[n][key]);
+    root.appendChild(t);
+  }
+  root.appendChild(svg("circle", { cx: x(n), cy: ankerW, r: 4, class: "dot-wert" }));
+
+  // Fadenkreuz: rastet auf den nächsten Tag ein, zeigt beide Werte
+  const cross = svg("line", { y1: pad.t, y2: pad.t + ih, class: "cross", visibility: "hidden" });
+  const dW = svg("circle", { r: 4, class: "dot-wert", visibility: "hidden" });
+  const dE = svg("circle", { r: 4, class: "dot-einstand", visibility: "hidden" });
+  const hit = svg("rect", { x: pad.l, y: 0, width: iw, height: H, fill: "transparent" });
+  add(root, cross, dE, dW, hit);
+  let idx = n;
+  const zeige = (i) => {
+    idx = Math.max(0, Math.min(n, i));
+    const p = pts[idx];
+    for (const [node, attr] of [[cross, ["x1", "x2"]], [dW, ["cx"]], [dE, ["cx"]]]) {
+      for (const a of attr) node.setAttribute(a, x(idx));
+      node.setAttribute("visibility", "visible");
+    }
+    dW.setAttribute("cy", y(p.wert));
+    dE.setAttribute("cy", y(p.einstand));
+    tip.replaceChildren();
+    const diff = p.wert - p.einstand;
+    add(tip, el("div", "tip-date", new Date(`${p.datum}T00:00:00`).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })),
+      tipRow("k-wert", fmtEur(p.wert), "Depotwert"),
+      tipRow("k-einstand", fmtEur(p.einstand), "Eingezahlt"),
+      el("div", `tip-diff ${trend(diff)}`, `${diff >= 0 ? "+" : "−"}${fmtEur(Math.abs(diff))} Gewinn`));
+    tip.hidden = false;
+    const tx = x(idx) + 12;
+    tip.style.left = `${Math.min(tx, W - tip.offsetWidth - 4)}px`;
+    if (tx + tip.offsetWidth > W - 4) tip.style.left = `${Math.max(4, x(idx) - tip.offsetWidth - 12)}px`;
+  };
+  const verstecke = () => {
+    for (const node of [cross, dW, dE]) node.setAttribute("visibility", "hidden");
+    tip.hidden = true;
+  };
+  const ausZeiger = (e) => {
+    const r = root.getBoundingClientRect();
+    const px = (e.clientX - r.left) * (W / r.width);
+    zeige(Math.round(((px - pad.l) / iw) * n));
+  };
+  hit.addEventListener("pointermove", ausZeiger);
+  hit.addEventListener("pointerdown", ausZeiger);
+  hit.addEventListener("pointerleave", verstecke);
+  root.addEventListener("focus", () => zeige(idx));
+  root.addEventListener("blur", verstecke);
+  root.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft") { e.preventDefault(); zeige(idx - 1); }
+    if (e.key === "ArrowRight") { e.preventDefault(); zeige(idx + 1); }
+  });
+  holder.insertBefore(root, tip);
+}
+
+function tipRow(cls, wert, label) {
+  const row = el("div", "tip-row");
+  add(row, el("span", `legend-key ${cls}`), el("b", null, wert), el("span", "muted", label));
+  return row;
+}
+
+function verlaufTabelle(pts) {
+  const det = el("details", "chart-table");
+  det.appendChild(el("summary", null, "Werte als Tabelle"));
+  const table = el("table");
+  const head = el("tr");
+  for (const h of ["Datum", "Depotwert", "Eingezahlt", "Gewinn"]) head.appendChild(el("th", null, h));
+  table.appendChild(head);
+  for (const p of [...pts].reverse()) {
+    const tr = el("tr");
+    add(tr, el("td", null, fmtDay(p.datum)), el("td", null, fmtEur(p.wert)),
+      el("td", null, fmtEur(p.einstand)), el("td", trend(p.wert - p.einstand), fmtEur(p.wert - p.einstand)));
+    table.appendChild(tr);
+  }
+  det.appendChild(table);
+  return det;
 }
 
 const ANLASS = { vor: "vor dem Termin", nach: "nach dem Termin", bewegung: "starke Kursbewegung" };
@@ -421,6 +650,19 @@ function applyLocalTrades() {
   }
 }
 
+/** Mit Live-Kursen: heutiger Punkt der Kurve = aktueller Depotwert (nur an Börsentagen). */
+function livePunkt() {
+  if (!state.live?.ok || !state.verlauf.length) return;
+  const heute = new Date();
+  if (heute.getDay() === 0 || heute.getDay() === 6) return;
+  const pos = (state.feed.depot?.payload?.rows || []).filter((r) => r.art === "position");
+  if (!pos.length || pos.some((r) => r.wert_eur == null)) return;
+  const punkt = { datum: todayIso(), wert: pos.reduce((s, r) => s + r.wert_eur, 0),
+    einstand: pos.reduce((s, r) => s + (r.einstand_eur || 0), 0) };
+  const i = state.verlauf.findIndex((p) => p.datum === punkt.datum);
+  if (i >= 0) state.verlauf[i] = punkt; else state.verlauf.push(punkt);
+}
+
 // --------------------------------------------------------------------------- //
 // Live-Kurse (Supabase-Funktion "kurse") — rechnet Werte mit aktuellen Kursen neu.
 // Fällt die Funktion aus, bleiben einfach die Werte des letzten Catalyst-Laufs stehen.
@@ -556,8 +798,12 @@ async function load() {
     const trades = await client.from("catalyst_trades").select("*")
       .order("datum", { ascending: true }).order("created_at", { ascending: true });
     state.trades = trades.error ? [] : (trades.data || []);
+    const verlauf = await client.from("catalyst_verlauf").select("datum,wert_eur,einstand_eur").order("datum");
+    state.verlauf = verlauf.error ? [] : (verlauf.data || []).map((p) => ({
+      datum: p.datum, wert: Number(p.wert_eur), einstand: Number(p.einstand_eur) }));
     applyLocalTrades();
     try { await applyLiveQuotes(); } catch { state.live = { ok: false }; }
+    livePunkt();
     if (!feed.data?.length && !meldungen.data?.length) {
       showError("Keine Daten für dieses Konto. Entweder gab es noch keinen Lauf, oder du bist mit einem anderen Konto angemeldet.");
     }
@@ -586,6 +832,7 @@ function switchView(name) {
   }
   for (const v of ["depot", "meldungen", "radar"]) $(`view-${v}`).hidden = v !== name;
   if (name === "meldungen") markSeen(); else updateBadge();
+  if (name === "depot") renderDepot();   // Kurve braucht die sichtbare Breite
 }
 
 function show(screen) {
@@ -635,6 +882,12 @@ $("refresh").addEventListener("click", load);
 for (const b of document.querySelectorAll(".tabs button")) {
   b.addEventListener("click", () => switchView(b.dataset.view));
 }
+// Kurve an neue Breite anpassen (Drehen des Handys, Fenstergröße).
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (state.view === "depot" && !$("app").hidden) renderDepot(); }, 200);
+});
 // Holt frische Daten, wenn die App aus dem Hintergrund zurückkommt.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && !$("app").hidden) load();
