@@ -222,6 +222,13 @@ function positionRow(r, mitTermin) {
     mitTermin && r.termin ? `${r.termin_art || "Termin"} ${inDays(r.termin)}` : null].filter(Boolean).join(" · ");
   add(s, el("div", "pos-name", r.name), el("div", "pos-value", fmtEur(r.wert_eur)),
     el("div", "pos-line2", line2), el("div", `pos-pct ${trend(r.gewinn_pct)}`, fmtPct(r.gewinn_pct)));
+  // Lage-Signale (neutral): kurz an der Zeile, ausführlich beim Aufklappen
+  const signale = r.signale || [];
+  if (signale.length) {
+    const chips = el("div", "sig-row");
+    for (const sg of signale) chips.appendChild(el("span", `sig ${sg.ton === "achtung" ? "achtung" : ""}`, sg.kurz));
+    s.appendChild(chips);
+  }
   if (anteil != null) {
     const track = el("div", "pos-share");
     const bar = el("span");
@@ -240,6 +247,13 @@ function positionRow(r, mitTermin) {
       ? cell(r.termin_art ? `nächste ${r.termin_art}` : "nächster Termin", r.termin ? fmtDay(r.termin) : "—", "")
       : cell("Kurs", fmtEur(r.kurs_eur), ""));
   d.appendChild(grid);
+  if (signale.length) {
+    const box = el("div", "sig-box");
+    box.appendChild(el("div", "check-title", "Lage-Signale"));
+    for (const sg of signale) box.appendChild(el("p", `sig-text ${sg.ton === "achtung" ? "achtung" : ""}`, sg.text));
+    box.appendChild(el("p", "sig-hinweis", "Neutrale Hinweise aus Kursverlauf und Einstand — kein Verkaufsrat. Die Entscheidung liegt bei dir."));
+    d.appendChild(box);
+  }
   if (r.sparplan) {
     const tage = (r.sparplan.tage || []).map((t) => `${t}.`).join(" & ");
     const neu = r.sparplan_neu ? ` · ${r.sparplan_neu} Ausführung(en) seit Auszug eingerechnet (geschätzt)` : "";

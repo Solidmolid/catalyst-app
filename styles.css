@@ -408,3 +408,13 @@ details summary::-webkit-details-marker { display: none; }
 .push-text { flex: 1; min-width: 0; }
 .push-titel { font-weight: 600; font-size: 14.5px; }
 .push-unter { font-size: 12.5px; color: var(--ink3); margin-top: 2px; line-height: 1.45; }
+
+/* Lage-Signale je Aktie (neutral) */
+.sig-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.sig { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; background: var(--surface-2); color: var(--ink2); }
+.sig.achtung { background: var(--neutral-bg); color: var(--neutral); }
+.sig-box { margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
+.sig-text { margin: 6px 0 0; font-size: 14px; padding-left: 14px; position: relative; }
+.sig-text::before { content: ""; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--ink3); }
+.sig-text.achtung::before { background: var(--neutral); }
+.sig-hinweis { margin: 10px 0 0; font-size: 11.5px; color: var(--ink3); }
