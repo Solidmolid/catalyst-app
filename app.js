@@ -18,7 +18,7 @@ const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_K
 });
 
 const state = { view: "depot", feed: {}, meldungen: [], trades: [], verlauf: [], range: "Max",
-  depotWert: 0, loading: false, live: null, formOpen: false,
+  depotWert: 0, loading: false, live: null,
   pruefung: { aktiv: false, text: "", timer: null } };
 
 // --------------------------------------------------------------------------- //
@@ -108,20 +108,11 @@ function renderDepot() {
     return;
   }
 
-  const live = state.live?.ok ? `Live-Kurse ${fmtStamp(state.live.zeit)}` : `Stand: ${fmtStamp(entry.updated_at)}`;
-  add(view, el("p", "stand", live));
-
-  const openBtn = el("button", "primary trade-open", state.formOpen ? "Eintragen abbrechen" : "＋ Kauf / Verkauf eintragen");
-  openBtn.type = "button";
-  openBtn.addEventListener("click", () => { state.formOpen = !state.formOpen; renderDepot(); });
-  view.appendChild(openBtn);
-  if (state.formOpen) view.appendChild(tradeForm(positions));
-
   const aktien = positions.filter((r) => r.typ !== "etf");
   const etfs = positions.filter((r) => r.typ === "etf");
   const sum = (rows, key) => rows.reduce((s, r) => s + (r[key] || 0), 0);
 
-  // Summe über alle Positionen mit Kurs
+  // Kopf: Depotwert groß, darunter heute / seit Einstand, Aufteilung als ein Balken
   const priced = positions.filter((r) => r.wert_eur != null);
   state.depotWert = sum(priced, "wert_eur");
   if (priced.length) {
@@ -129,29 +120,39 @@ function renderDepot() {
     const einstand = sum(priced, "einstand_eur");
     const heute = priced.reduce((s, r) => (r.tag_pct == null ? s : s + r.wert_eur - r.wert_eur / (1 + r.tag_pct / 100)), 0);
     const gesamtPct = einstand ? (wert / einstand - 1) * 100 : null;
-    const card = el("div", "card");
-    add(card,
-      el("div", "section-title", "Depot gesamt"),
-      el("div", "summary-value", fmtEur(wert)));
-    const row = el("div", "summary-row");
-    const a = el("span", trend(gesamtPct)); add(a, el("b", null, fmtPct(gesamtPct)), document.createTextNode(" seit Einstand"));
-    const b = el("span", trend(heute)); add(b, el("b", null, `${heute >= 0 ? "+" : "−"}${fmtEur(Math.abs(heute))}`), document.createTextNode(" heute"));
-    add(row, a, b);
-    add(card, row);
-    const split = el("div", "summary-split");
-    const teil = (rows) => {
-      const w = sum(rows.filter((r) => r.wert_eur != null), "wert_eur");
-      return `${fmtEur(w)} · ${fmtShare(w / wert)}`;
-    };
-    if (aktien.length) split.appendChild(el("span", null, `Einzelaktien ${teil(aktien)}`));
-    if (etfs.length) split.appendChild(el("span", null, `ETFs ${teil(etfs)}`));
+    const hero = el("div", "hero");
+    add(hero, el("div", "hero-label", "Depotwert"), el("div", "hero-value", fmtEur(wert)));
+    const sub = el("div", "hero-sub");
+    const a = el("span", trend(heute)); add(a, el("b", null, `${heute >= 0 ? "+" : "−"}${fmtEur(Math.abs(heute))}`), document.createTextNode(" heute"));
+    const b = el("span", trend(gesamtPct)); add(b, el("b", null, fmtPct(gesamtPct)), document.createTextNode(" seit Einstand"));
+    add(sub, a, b);
+    hero.appendChild(sub);
+
     const cash = entry.payload.cash;
-    if (cash && cash.eur != null) {
-      const hinweis = cash.geschaetzt ? " (inkl. Sparpläne/Einträge, geschätzt)" : cash.stand ? ` (Stand ${fmtDay(cash.stand)})` : "";
-      split.appendChild(el("span", null, `Cash ${fmtEur(cash.eur)}${hinweis}`));
+    const teile = [
+      ["a-aktien", "Aktien", sum(aktien.filter((r) => r.wert_eur != null), "wert_eur")],
+      ["a-etf", "ETFs", sum(etfs.filter((r) => r.wert_eur != null), "wert_eur")],
+      ["a-cash", cash?.geschaetzt ? "Cash (geschätzt)" : "Cash", cash?.eur > 0 ? cash.eur : 0],
+    ].filter(([, , w]) => w > 0);
+    const gesamt = teile.reduce((s, [, , w]) => s + w, 0);
+    if (gesamt > 0) {
+      const alloc = el("div", "alloc");
+      const bar = el("div", "alloc-bar");
+      const legend = el("div", "alloc-legend");
+      for (const [cls, name, w] of teile) {
+        const seg = el("span", cls);
+        seg.style.flex = String(w / gesamt);
+        bar.appendChild(seg);
+        const item = el("span");
+        add(item, el("i", cls), document.createTextNode(`${name} ${fmtShare(w / gesamt)}`));
+        legend.appendChild(item);
+      }
+      add(alloc, bar, legend);
+      hero.appendChild(alloc);
     }
-    card.appendChild(split);
-    view.appendChild(card);
+    const stand = state.live?.ok ? `Live-Kurse · ${fmtStamp(state.live.zeit)}` : `Stand · ${fmtStamp(entry.updated_at)}`;
+    hero.appendChild(el("div", "hero-stand", stand));
+    view.appendChild(hero);
   }
 
   if (state.verlauf.length > 1) view.appendChild(verlaufCard());
@@ -159,89 +160,112 @@ function renderDepot() {
   // Aktive Hinweise (deine Marken, große Bewegung, naher Termin)
   for (const h of entry.payload.hinweise || []) view.appendChild(el("div", "alert", h.text));
 
-  if (priced.length > 1) view.appendChild(aufteilungCard(priced));
-
-  if (aktien.length) view.appendChild(el("div", "section-title", "Einzelaktien"));
-  for (const r of aktien) view.appendChild(positionCard(r, true));
-  if (etfs.length) view.appendChild(el("div", "section-title", "ETFs"));
-  for (const r of etfs) view.appendChild(positionCard(r, false));
+  const liste = (titel, rows, mitTermin) => {
+    if (!rows.length) return;
+    view.appendChild(el("div", "section-title", titel));
+    const box = el("div", "ledger");
+    for (const r of [...rows].sort((x, y) => (y.wert_eur || 0) - (x.wert_eur || 0))) box.appendChild(positionRow(r, mitTermin));
+    view.appendChild(box);
+  };
+  liste("Einzelaktien", aktien, true);
+  liste("ETFs", etfs, false);
 
   if (watch.length) {
     view.appendChild(el("div", "section-title", "Watchlist"));
+    const box = el("div", "ledger");
     for (const r of watch) {
-      const card = el("div", "card");
-      const head = el("div", "pos-head");
-      const name = el("div", "pos-name", r.name);
-      name.appendChild(el("span", "pos-ticker", r.ticker));
-      add(head, name, el("div", "pos-value", fmtEur(r.kurs_eur)));
-      add(card, head, add(el("div", "pos-grid"), cell("heute", fmtPct(r.tag_pct), trend(r.tag_pct))));
-      view.appendChild(card);
+      const sumRow = el("div", "pos-sum");
+      add(sumRow, el("div", "pos-name", r.name), el("div", "pos-value", fmtEur(r.kurs_eur)),
+        el("div", "pos-line2", r.ticker), el("div", `pos-pct ${trend(r.tag_pct)}`, `${fmtPct(r.tag_pct)} heute`));
+      box.appendChild(add(el("div", "pos-row"), sumRow));
     }
+    view.appendChild(box);
   }
 
   if (state.trades.length) view.appendChild(tradeList());
 
   if (positions.some((r) => r.geschaetzt)) {
-    view.appendChild(el("p", "note", "Stückzahl/Einstand sind teils geschätzt — echte Werte in depot.yaml eintragen."));
+    view.appendChild(el("p", "note", "Stückzahl und Einstand sind teils geschätzt (Sparpläne, Einträge). Einmal im Monat mit dem Trade-Republic-Auszug abgleichen."));
   }
   if (!rows.some((r) => r.regeln && Object.keys(r.regeln).length)) {
-    view.appendChild(el("p", "note", "Noch keine eigenen Marken gesetzt — gemeldet werden nur große Tagesbewegungen und nahe Termine."));
+    view.appendChild(el("p", "note", "Noch keine eigenen Marken gesetzt — gemeldet werden große Tagesbewegungen und nahe Termine."));
   }
+
+  // Kauf / Verkauf: schwebender Knopf, Formular als Blatt von unten
+  let fab = $("fab");
+  if (!fab) {
+    fab = el("button", "fab");
+    fab.id = "fab";
+    fab.type = "button";
+    fab.setAttribute("aria-label", "Kauf oder Verkauf eintragen");
+    fab.appendChild(svgIcon("M12 5v14M5 12h14"));
+    fab.addEventListener("click", () => openTradeSheet());
+    document.body.appendChild(fab);
+  }
+  fab.hidden = state.view !== "depot" || $("app").hidden;
 }
 
-function positionCard(r, mitTermin) {
-  const card = el("div", "card");
-  const head = el("div", "pos-head");
-  const name = el("div", "pos-name", r.name);
-  const anteil = state.depotWert && r.wert_eur != null ? ` · ${fmtShare(r.wert_eur / state.depotWert)}` : "";
-  name.appendChild(el("span", "pos-ticker", `${r.ticker}${anteil}`));
-  add(head, name, el("div", "pos-value", fmtEur(r.wert_eur)));
+function svgIcon(d) {
+  const s = svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
+  s.appendChild(svg("path", { d }));
+  return s;
+}
+
+/** Eine Position als aufklappbare Zeile: oben das Wichtigste, aufgeklappt die Details. */
+function positionRow(r, mitTermin) {
+  const row = el("details", "pos-row");
+  const s = el("summary", "pos-sum");
+  const anteil = state.depotWert && r.wert_eur != null ? r.wert_eur / state.depotWert : null;
+  const line2 = [r.ticker, anteil != null ? fmtShare(anteil) : null,
+    mitTermin && r.termin ? `${r.termin_art || "Termin"} ${inDays(r.termin)}` : null].filter(Boolean).join(" · ");
+  add(s, el("div", "pos-name", r.name), el("div", "pos-value", fmtEur(r.wert_eur)),
+    el("div", "pos-line2", line2), el("div", `pos-pct ${trend(r.gewinn_pct)}`, fmtPct(r.gewinn_pct)));
+  if (anteil != null) {
+    const track = el("div", "pos-share");
+    const bar = el("span");
+    bar.style.width = `${Math.max(1, Math.min(100, anteil * 100))}%`;
+    track.appendChild(bar);
+    s.appendChild(track);
+  }
+  row.appendChild(s);
+
+  const d = el("div", "pos-detail");
   const grid = el("div", "pos-grid");
   add(grid,
-    cell("seit Einstand", fmtPct(r.gewinn_pct), trend(r.gewinn_pct)),
     cell("heute", fmtPct(r.tag_pct), trend(r.tag_pct)),
+    cell("Einstand", fmtEur(r.einstand_eur), ""),
     mitTermin
-      ? cell(r.termin_art ? `nächste ${r.termin_art}` : "nächster Termin",
-        r.termin ? `${fmtDay(r.termin)} · ${inDays(r.termin)}` : "—", "")
-      : cell("Einstand", fmtEur(r.einstand_eur), ""));
-  add(card, head, grid);
+      ? cell(r.termin_art ? `nächste ${r.termin_art}` : "nächster Termin", r.termin ? fmtDay(r.termin) : "—", "")
+      : cell("Kurs", fmtEur(r.kurs_eur), ""));
+  d.appendChild(grid);
   if (r.sparplan) {
     const tage = (r.sparplan.tage || []).map((t) => `${t}.`).join(" & ");
-    const neu = r.sparplan_neu ? ` · +${r.sparplan_neu} Ausführung(en) seit Auszug eingerechnet (geschätzt)` : "";
-    card.appendChild(el("p", "pos-note", `Sparplan ${fmtEur(r.sparplan.betrag_eur)} am ${tage}${neu}`));
+    const neu = r.sparplan_neu ? ` · ${r.sparplan_neu} Ausführung(en) seit Auszug eingerechnet (geschätzt)` : "";
+    d.appendChild(el("p", "pos-note", `Sparplan ${fmtEur(r.sparplan.betrag_eur)} am ${tage}${neu}`));
   }
-  if (r.app_eintraege) {
-    card.appendChild(el("p", "pos-note", `inkl. ${r.app_eintraege} Eintrag/Einträge aus der App`));
-  }
+  if (r.app_eintraege) d.appendChild(el("p", "pos-note", `inkl. ${r.app_eintraege} Eintrag/Einträge aus der App`));
   const checks = state.feed.checks?.payload?.checks?.[r.ticker] || [];
-  if (checks.length) card.appendChild(checkBlock(checks[0], checks.length - 1));
-  return card;
+  if (checks.length) d.appendChild(checkBlock(checks[0], checks.length - 1));
+  row.appendChild(d);
+  return row;
 }
 
-// --------------------------------------------------------------------------- //
-// Aufteilung: Anteil je Position am Depotwert (ohne Cash) — sortierte Balken
-// --------------------------------------------------------------------------- //
-function aufteilungCard(priced) {
-  const total = priced.reduce((s, r) => s + r.wert_eur, 0);
-  const rows = [...priced].sort((a, b) => b.wert_eur - a.wert_eur);
-  const max = rows[0].wert_eur / total;
-  const card = el("div", "card");
-  add(card, el("div", "section-title", "Aufteilung"),
-    el("p", "pos-note chart-sub", "Anteil am Depotwert, ohne Cash"));
-  const list = el("div", "share-list");
-  for (const r of rows) {
-    const share = r.wert_eur / total;
-    const row = el("div", "share-row");
-    row.title = `${r.name}: ${fmtEur(r.wert_eur)} · ${fmtShare(share)}`;
-    const track = el("div", "share-track");
-    const bar = el("div", "share-bar");
-    bar.style.width = `${Math.max(1, (share / max) * 100)}%`;
-    track.appendChild(bar);
-    add(row, el("span", "share-name", r.name), track, el("span", "share-val", fmtShare(share)));
-    list.appendChild(row);
-  }
-  card.appendChild(list);
-  return card;
+function openTradeSheet() {
+  const positions = (state.feed.depot?.payload?.rows || []).filter((r) => r.art === "position");
+  const back = el("div", "sheet-backdrop");
+  const sheet = el("div", "sheet");
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("aria-label", "Kauf oder Verkauf eintragen");
+  const close = () => { back.remove(); sheet.remove(); };
+  back.addEventListener("click", close);
+  const head = el("div", "sheet-head");
+  const x = el("button", "icon-btn", "×");
+  x.type = "button";
+  x.setAttribute("aria-label", "Schließen");
+  x.addEventListener("click", close);
+  add(head, el("h2", null, "Eintragen"), x);
+  add(sheet, el("div", "sheet-grip"), head, tradeForm(positions, close));
+  document.body.append(back, sheet);
 }
 
 // --------------------------------------------------------------------------- //
@@ -282,7 +306,7 @@ function verlaufCard() {
   const last = pts[pts.length - 1];
   const head = el("div", "chart-head");
   const titel = el("div");
-  add(titel, el("div", "section-title", "Verlauf"),
+  add(titel, el("div", "hero-label", "Verlauf"),
     el("p", "pos-note chart-sub", `Depotwert ${fmtEur(last.wert)} · eingezahlt ${fmtEur(last.einstand)}`));
   const seg = el("div", "range-seg");
   for (const [key] of RANGES) {
@@ -313,12 +337,12 @@ function verlaufCard() {
 function drawVerlauf(holder, tip, pts) {
   holder.querySelector("svg")?.remove();
   const W = Math.max(280, holder.clientWidth || 320);
-  const H = 210;
-  const pad = { l: 46, r: 72, t: 10, b: 24 };
+  const H = 150;
+  const pad = { l: 42, r: 66, t: 8, b: 22 };
   const iw = W - pad.l - pad.r;
   const ih = H - pad.t - pad.b;
   const werte = pts.flatMap((p) => [p.wert, p.einstand]);
-  const ticks = niceTicks(Math.min(...werte), Math.max(...werte), 4);
+  const ticks = niceTicks(Math.min(...werte), Math.max(...werte), 3);
   const lo = ticks[0], hi = ticks[ticks.length - 1];
   const x = (i) => pad.l + (pts.length === 1 ? iw / 2 : (i / (pts.length - 1)) * iw);
   const y = (v) => pad.t + ih - ((v - lo) / (hi - lo || 1)) * ih;
@@ -446,7 +470,7 @@ function checkBlock(c, aeltere) {
   add(box, head, el("div", null, c.kurz));
   if (c.text) {
     const det = el("details");
-    add(det, el("summary", null, aeltere ? `Ganze Einordnung (+${aeltere} ältere)` : "Ganze Einordnung"),
+    add(det, el("summary", "mehr", aeltere ? `Ganze Einordnung (+${aeltere} ältere)` : "Ganze Einordnung"),
       el("p", null, c.text));
     box.appendChild(det);
   }
@@ -481,10 +505,9 @@ async function liveKurs(ticker) {
   } catch { return null; }
 }
 
-function tradeForm(positions) {
+function tradeForm(positions, onDone) {
   const f = { art: "kauf", ticker: positions[0]?.ticker || "", name: positions[0]?.name || "", typ: positions[0]?.typ || "aktie" };
-  const card = el("form", "card trade-form");
-  card.appendChild(el("div", "section-title", "Kauf / Verkauf eintragen"));
+  const card = el("form", "trade-form");
 
   // Kauf | Verkauf
   const seg = el("div", "seg");
@@ -506,7 +529,7 @@ function tradeForm(positions) {
     o.value = r.ticker;
     sel.appendChild(o);
   }
-  const neuOpt = el("option", null, "➕ Neue Aktie / ETF suchen …");
+  const neuOpt = el("option", null, "Neue Aktie / ETF suchen …");
   neuOpt.value = "__neu__";
   sel.appendChild(neuOpt);
   card.appendChild(field("Wertpapier", sel));
@@ -590,7 +613,7 @@ function tradeForm(positions) {
     save.disabled = false;
     save.textContent = "Speichern";
     if (error) { err.textContent = `Speichern fehlgeschlagen: ${error.message}`; err.hidden = false; return; }
-    state.formOpen = false;
+    onDone?.();
     await load();
   });
 
@@ -599,30 +622,33 @@ function tradeForm(positions) {
 }
 
 function tradeList() {
-  const card = el("div", "card msg-list");
-  card.appendChild(el("div", "section-title trade-title", "Deine Einträge"));
+  const box = el("details", "ledger einträge");
+  const sum = el("summary");
+  add(sum, el("span", null, `Deine Einträge (${state.trades.length})`), el("span", "mehr", "Anzeigen"));
+  box.appendChild(sum);
   const seit = state.feed.depot ? new Date(state.feed.depot.updated_at) : null;
   for (const t of [...state.trades].reverse()) {
-    const item = el("div", "msg trade-item");
+    const item = el("div", "trade-item");
     const txt = el("div");
     const stk = (t.betrag_eur / t.kurs_eur).toLocaleString("de-DE", { maximumFractionDigits: 4 });
     add(txt,
       el("time", null, `${fmtDay(t.datum)} · ${t.art === "kauf" ? "Kauf" : "Verkauf"}`),
       el("div", null, `${t.name || t.ticker}: ${fmtEur(t.betrag_eur)} zu ${fmtEur(t.kurs_eur)} (${stk} Stk.)`));
-    if (seit && new Date(t.created_at) > seit) txt.appendChild(el("small", "muted", "in der App schon eingerechnet — Catalyst übernimmt es beim nächsten Lauf"));
+    if (seit && new Date(t.created_at) > seit) txt.appendChild(el("small", "muted", "schon eingerechnet — Catalyst übernimmt es beim nächsten Lauf"));
     const del = el("button", "icon-btn small", "×");
     del.type = "button";
     del.title = "Eintrag löschen";
     del.addEventListener("click", async () => {
-      if (!confirm(`Eintrag löschen?\n${t.name || t.ticker}, ${fmtEur(t.betrag_eur)}`)) return;
+      if (!confirm(`Eintrag löschen?
+${t.name || t.ticker}, ${fmtEur(t.betrag_eur)}`)) return;
       const { error } = await client.from("catalyst_trades").delete().eq("id", t.id);
       if (error) { showError(`Löschen fehlgeschlagen: ${error.message}`); return; }
       await load();
     });
     add(item, txt, del);
-    card.appendChild(item);
+    box.appendChild(item);
   }
-  return card;
+  return box;
 }
 
 /** Einträge, die nach dem letzten Catalyst-Lauf dazukamen, sofort selbst einrechnen
@@ -713,20 +739,45 @@ function cell(label, value, cls) {
 // --------------------------------------------------------------------------- //
 // Meldungen
 // --------------------------------------------------------------------------- //
+const MELD_ERKLAERUNG = "Hier landet, was in deinem Depot passiert: eine Aktie bewegt sich an einem Tag um mehr als 5 %, "
+  + "Quartalszahlen stehen in den nächsten 7 Tagen an, oder die KI hat einen neuen Depot-Check geschrieben. "
+  + "Geprüft wird Mo–Fr stündlich.";
+
+function meldungsTag(ts) {
+  const d = new Date(ts); const h = new Date();
+  const tag = (x) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
+  if (tag(d) === tag(h)) return "Heute";
+  const g = new Date(h); g.setDate(h.getDate() - 1);
+  if (tag(d) === tag(g)) return "Gestern";
+  return d.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "long" });
+}
+
 function renderMeldungen() {
   const view = $("view-meldungen");
   view.replaceChildren();
+  view.appendChild(el("p", "intro", MELD_ERKLAERUNG));
   if (!state.meldungen.length) {
-    view.appendChild(empty("Noch keine Meldungen. Der Depot-Wächter meldet sich, sobald etwas eintritt."));
+    view.appendChild(empty("Noch keine Meldungen — es ist ruhig in deinem Depot."));
     return;
   }
-  const list = el("div", "card msg-list");
+  const seen = localGet(SEEN_KEY);
+  let tagAlt = null, list = null;
   for (const m of state.meldungen) {
-    const item = el("div", "msg");
-    add(item, el("time", null, fmtStamp(m.created_at)), el("div", null, m.text));
+    const tag = meldungsTag(m.created_at);
+    if (tag !== tagAlt) {
+      view.appendChild(el("div", "msg-day", tag));
+      list = el("div", "ledger msg-list");
+      view.appendChild(list);
+      tagAlt = tag;
+    }
+    const istCheck = String(m.id || "").includes(":check:");
+    const neu = !seen || m.created_at > seen;
+    const item = el("div", `msg${istCheck ? " k-check" : ""}${neu ? " neu" : ""}`);
+    const t = el("time", null, new Date(m.created_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }));
+    t.appendChild(el("span", "msg-kind", istCheck ? "KI-Depot-Check" : "Depot"));
+    add(item, t, el("div", "msg-text", m.text));
     list.appendChild(item);
   }
-  view.appendChild(list);
 }
 
 function updateBadge() {
@@ -875,39 +926,98 @@ function renderRadar() {
     view.appendChild(el("div", "card hint", `Wird gerade neu eingeordnet: ${namen}. Die neue KI-Meinung kommt in ein paar Minuten.`));
   }
 
-  if (!(p.picks || []).length) view.appendChild(empty("Heute keine eingeordneten Picks."));
+  if (!(p.picks || []).length) view.appendChild(empty("Gerade keine eingeordneten Picks."));
   const neuestes = (p.picks || []).reduce((m, k) => (k.seit && k.seit > m ? k.seit : m), "");
-  for (const k of p.picks || []) {
-    const lbl = (k.label || "").toLowerCase();
-    const card = el("div", `card pick ${lbl}`);
-    const head = el("div", "pick-head");
-    const name = el("div", "pos-name", k.asset);
-    if (k.ticker) name.appendChild(el("span", "pos-ticker", k.ticker));
-    const badges = el("div", "badges");
-    if (k.seit && k.seit === neuestes) badges.appendChild(el("span", "tag neu", "NEU"));
-    if (k.im_depot) badges.appendChild(el("span", "tag depot", "Im Depot"));
-    if (k.label) badges.appendChild(el("span", `label ${lbl}`, k.label));
-    add(head, name, badges);
-    const meta = `${k.typ}${k.datum ? ` · ${fmtDay(k.datum)} · ${inDays(k.datum)}` : ""}`
-      + (k.seit ? ` · eingeordnet ${fmtDay(k.seit)}` : "");
-    add(card, head, el("div", "pick-meta", meta), el("div", null, k.kurz));
-    if (k.text) {
-      const det = el("details");
-      add(det, el("summary", null, "Ganze Einordnung"), el("p", null, k.text));
-      card.appendChild(det);
-    }
-    view.appendChild(card);
+  if ((p.picks || []).length) {
+    view.appendChild(el("div", "section-title", "Picks"));
+    const box = el("div", "ledger");
+    for (const k of p.picks) box.appendChild(pickRow(k, neuestes));
+    view.appendChild(box);
   }
 
   if ((p.exit_signals || []).length) {
-    view.appendChild(el("div", "section-title", "Frühere Picks — Kaufgrund trägt nicht mehr"));
-    for (const s of p.exit_signals) {
-      const card = el("div", "card exit");
-      add(card, el("div", "pos-name", s.asset || s.ticker), el("div", "pick-meta", (s.reasons || []).join(" · ")));
-      view.appendChild(card);
+    view.appendChild(el("div", "section-title", "Frühere Picks — Grund trägt nicht mehr"));
+    const box = el("div", "ledger");
+    for (const sig of p.exit_signals) {
+      const row = el("div", "exit");
+      add(row, el("div", "pick-name", sig.asset || sig.ticker), el("div", "pick-meta", (sig.reasons || []).join(" · ")));
+      box.appendChild(row);
     }
+    view.appendChild(box);
   }
-  view.appendChild(el("p", "note", "Einordnung eines KI-Agenten — eine Meinung, keine Anlageberatung, keine Kursziele."));
+
+  view.appendChild(bilanzCard());
+  view.appendChild(el("p", "note", "Die Etiketten sind die Meinung eines KI-Agenten zur Nachrichtenlage — kein Kaufsignal, keine Anlageberatung, keine Kursziele."));
+}
+
+function pickRow(k, neuestes) {
+  const lbl = (k.label || "").toLowerCase();
+  const row = el("div", "pick");
+  const head = el("div", "pick-head");
+  const name = el("div", "pick-name", k.asset);
+  if (k.ticker) name.appendChild(el("span", "pos-ticker", k.ticker));
+  const badges = el("div", "badges");
+  if (k.seit && k.seit === neuestes) badges.appendChild(el("span", "tag neu", "Neu"));
+  if (k.im_depot) badges.appendChild(el("span", "tag depot", "Im Depot"));
+  if (k.label) badges.appendChild(el("span", `label ${lbl}`, `KI: ${k.label}`));
+  add(head, name, badges);
+  const meta = `${k.typ}${k.datum ? ` · ${fmtDay(k.datum)} · ${inDays(k.datum)}` : ""}`
+    + (k.seit ? ` · eingeordnet ${fmtDay(k.seit)}` : "");
+  add(row, head, el("div", "pick-meta", meta));
+
+  // Warum dabei? Neutrale Zahlen aus den gesammelten Daten
+  const f = k.fakten || {};
+  const facts = el("div", "facts");
+  const fact = (text, cls = "") => facts.appendChild(el("span", `fact ${cls}`, text));
+  if (f.spanne != null) fact(`Jahresspanne ${f.spanne} %${f.spanne <= 25 ? " · nahe Tief" : f.spanne >= 80 ? " · nahe Hoch" : ""}`);
+  if (f.trend_1m != null) fact(`1 Monat ${f.trend_1m > 0 ? "+" : ""}${f.trend_1m} %`);
+  if (f.trend_3m != null) fact(`3 Monate ${f.trend_3m > 0 ? "+" : ""}${f.trend_3m} %`);
+  if (f.aufmerksamkeit != null) fact(`Aufmerksamkeit ${f.aufmerksamkeit < 30 ? "niedrig" : f.aufmerksamkeit > 70 ? "hoch" : "mittel"}`);
+  if (k.datum && f.termin_sicher === false) fact("Termin geschätzt", "warn");
+  if (facts.children.length) row.appendChild(facts);
+
+  row.appendChild(el("div", "pick-kurz", k.kurz));
+  if (k.text) {
+    const det = el("details");
+    add(det, el("summary", "mehr", "Ganze Einordnung"), el("p", null, k.text));
+    row.appendChild(det);
+  }
+  return row;
+}
+
+/** Rückschau: Wie liefen eingeordnete Werte nach dem Termin — im Vergleich zum Markt? */
+function bilanzCard() {
+  const b = state.feed.bilanz?.payload;
+  const card = el("div", "card");
+  add(card, el("div", "hero-label", "Bilanz"),
+    el("p", "chart-sub", "Wie liefen eingeordnete Werte in der Woche nach dem Termin — verglichen mit dem Markt (S&P 500)?"));
+  if (!b || !b.n) {
+    card.appendChild(el("p", "note", "Noch keine ausgewerteten Termine. Erste Ergebnisse gibt es rund eine Woche nach den nächsten Zahlen-Terminen."));
+    return card;
+  }
+  const grid = el("div", "bilanz-grid");
+  for (const lbl of ["Chance", "Neutral", "Risiko"]) {
+    const x = b.labels?.[lbl] || {};
+    const col = el("div", "bilanz-col");
+    const vs = x.vs_markt_5;
+    add(col, el("span", `label ${lbl.toLowerCase()}`, lbl),
+      el("div", `bilanz-wert ${trend(vs)}`, vs == null ? "—" : `${vs > 0 ? "+" : ""}${vs.toLocaleString("de-DE")} %`),
+      el("div", "bilanz-klein", x.n ? `vs. Markt · ${x.n} ${x.n === 1 ? "Fall" : "Fälle"}${x.quote_besser != null ? ` · ${x.quote_besser} % besser` : ""}` : "noch keine Fälle"));
+    grid.appendChild(col);
+  }
+  card.appendChild(grid);
+  const det = el("details");
+  det.appendChild(el("summary", "mehr", `Letzte Fälle (${(b.faelle || []).length})`));
+  for (const fall of b.faelle || []) {
+    const r = el("div", "bilanz-fall");
+    const vs = fall.vs_markt_5;
+    add(r, el("span", null, `${fall.asset} · ${fmtDay(fall.termin)} · ${fall.label}`),
+      el("span", trend(vs), vs == null ? "—" : `${vs > 0 ? "+" : ""}${vs.toLocaleString("de-DE")} % vs. Markt`));
+    det.appendChild(r);
+  }
+  card.appendChild(det);
+  card.appendChild(el("p", "note", `${b.aussagekraft}.`));
+  return card;
 }
 
 // --------------------------------------------------------------------------- //
@@ -964,6 +1074,8 @@ function switchView(name) {
     b.setAttribute("aria-selected", String(b.dataset.view === name));
   }
   for (const v of ["depot", "meldungen", "radar"]) $(`view-${v}`).hidden = v !== name;
+  if ($("fab")) $("fab").hidden = name !== "depot";
+  window.scrollTo({ top: 0 });
   if (name === "meldungen") markSeen(); else updateBadge();
   if (name === "depot") renderDepot();   // Kurve braucht die sichtbare Breite
 }
@@ -972,6 +1084,7 @@ function show(screen) {
   $("splash").hidden = true;
   $("auth").hidden = screen !== "auth";
   $("app").hidden = screen !== "app";
+  if ($("fab") && screen !== "app") $("fab").hidden = true;
 }
 
 async function onSession(session) {

@@ -7,56 +7,55 @@
   content="default-src 'self'; script-src 'self'; connect-src 'self' https://uytacdogqercenlgbpgb.supabase.co wss://uytacdogqercenlgbpgb.supabase.co; style-src 'self'; img-src 'self' data:; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'"
 />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<meta name="description" content="Catalyst – dein Depot, deine Meldungen und der Tages-Radar." />
-<meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)" />
+<meta name="description" content="Catalyst – dein Depot, deine Meldungen und der Radar." />
+<meta name="theme-color" content="#f5f1e8" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Catalyst" />
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 <title>Catalyst</title>
-<link rel="stylesheet" href="styles.css?v=9" />
+<link rel="stylesheet" href="styles.css?v=10" />
 </head>
 <body>
 
 <div id="splash" class="splash" role="status" aria-live="polite">
   <img src="icons/icon.svg" alt="" class="splash-icon" />
-  <span>Catalyst wird geladen …</span>
+  <span class="wordmark">Catalyst</span>
 </div>
 
 <section id="auth" class="auth" hidden>
-  <form id="login-form" class="card auth-card" autocomplete="on">
-    <div class="brand"><img src="icons/icon.svg" alt="" /><span>Catalyst</span></div>
-    <h1>Anmelden</h1>
-    <p class="muted">Mit deinem Momentum-Konto. Deine Depot-Daten sieht nur dieses Konto.</p>
-    <label>E-Mail
+  <form id="login-form" class="auth-card" autocomplete="on">
+    <img src="icons/icon.svg" alt="" class="auth-icon" />
+    <h1 class="wordmark">Catalyst</h1>
+    <p class="auth-sub">Dein Depot. Deine Termine. Deine Meldungen.</p>
+    <label class="field">E-Mail
       <input id="login-email" type="email" autocomplete="username" required />
     </label>
-    <label>Passwort
+    <label class="field">Passwort
       <input id="login-password" type="password" autocomplete="current-password" required />
     </label>
     <button id="login-submit" type="submit" class="primary">Anmelden</button>
     <p id="login-error" class="error" role="alert" hidden></p>
+    <p class="auth-foot">Mit deinem Momentum-Konto. Deine Depot-Daten sieht nur dieses Konto.</p>
   </form>
 </section>
 
 <main id="app" class="app" hidden>
   <header class="topbar">
-    <div class="brand"><img src="icons/icon.svg" alt="" /><span>Catalyst</span></div>
+    <div class="brand"><img src="icons/icon.svg" alt="" /><span class="wordmark">Catalyst</span></div>
     <div class="topbar-actions">
-      <button id="refresh" type="button" class="icon-btn" aria-label="Aktualisieren" title="Aktualisieren">↻</button>
-      <button id="logout" type="button" class="icon-btn" aria-label="Abmelden" title="Abmelden">⎋</button>
+      <button id="refresh" type="button" class="icon-btn" aria-label="Aktualisieren" title="Aktualisieren">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4" /></svg>
+      </button>
+      <button id="logout" type="button" class="icon-btn" aria-label="Abmelden" title="Abmelden">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10" /></svg>
+      </button>
     </div>
   </header>
-
-  <nav class="tabs" role="tablist">
-    <button type="button" role="tab" data-view="depot" aria-selected="true">Depot</button>
-    <button type="button" role="tab" data-view="meldungen" aria-selected="false">Meldungen <span id="badge" class="badge" hidden></span></button>
-    <button type="button" role="tab" data-view="radar" aria-selected="false">Radar</button>
-  </nav>
 
   <p id="load-error" class="error banner" role="alert" hidden></p>
 
@@ -65,12 +64,27 @@
   <section id="view-radar" class="view" role="tabpanel" hidden></section>
 
   <footer class="disclaimer">
-    Nur Fakten, deine eigenen Marken und klar gekennzeichnete KI-Meinung —
+    Fakten, deine eigenen Marken und klar gekennzeichnete KI-Meinung —
     keine Anlageberatung. Die Entscheidung liegt bei dir.
   </footer>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" role="tab" data-view="depot" aria-selected="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2" /></svg>
+      <span>Depot</span>
+    </button>
+    <button type="button" role="tab" data-view="meldungen" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 21h4" /></svg>
+      <span>Meldungen</span><span id="badge" class="badge" hidden></span>
+    </button>
+    <button type="button" role="tab" data-view="radar" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.5" /><path d="M12 12l6-6" /></svg>
+      <span>Radar</span>
+    </button>
+  </nav>
 </main>
 
 <script src="vendor/supabase-2.110.3.js"></script>
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

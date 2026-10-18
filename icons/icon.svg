@@ -1,8 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#111827"/>
-  <g fill="none" stroke="#fff" stroke-width="36" stroke-linecap="butt">
-    <path d="M128 208 A154 154 0 1 1 157 355"/>
-    <path d="M196 230 A82 82 0 1 1 203 316"/>
-  </g>
-  <circle cx="256" cy="256" r="36" fill="#34c759"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#17161a"/>
+      <stop offset="1" stop-color="#0b0b0c"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <!-- offenes C: Kreisbogen ~300°, Öffnung rechts -->
+  <path d="M352.6 172.7 A136 136 0 1 0 352.6 339.3" fill="none" stroke="#c9a96e" stroke-width="30" stroke-linecap="butt"/>
+  <!-- der Funke (Katalysator) in der Öffnung -->
+  <path d="M380 256 L398 238 L416 256 L398 274 Z" fill="#e8d3a6"/>
 </svg>
