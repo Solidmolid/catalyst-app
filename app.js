@@ -1210,7 +1210,12 @@ $("login-form").addEventListener("submit", async (e) => {
 $("logout").addEventListener("click", async () => {
   await client.auth.signOut({ scope: "local" });
 });
-$("refresh").addEventListener("click", load);
+// Oben "Aktualisieren": sofort neu laden UND den Radar-Check anstoßen (gleiche
+// Sperre wie "Jetzt prüfen" -- mehrfaches Drücken startet nichts doppelt).
+$("refresh").addEventListener("click", async () => {
+  await load();
+  if (!state.pruefung.aktiv) jetztPruefen();
+});
 for (const b of document.querySelectorAll(".tabs button")) {
   b.addEventListener("click", () => switchView(b.dataset.view));
 }
