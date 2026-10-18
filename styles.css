@@ -380,3 +380,9 @@ details summary::-webkit-details-marker { display: none; }
 .bilanz-klein { font-size: 11px; color: var(--ink3); margin-top: 2px; line-height: 1.4; }
 .bilanz-fall { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 9px 0; border-top: 1px solid var(--line); }
 .bilanz-fall:first-child { border-top: 0; }
+
+/* Push-Mitteilungen einschalten */
+.push-card { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+.push-text { flex: 1; min-width: 0; }
+.push-titel { font-weight: 600; font-size: 14.5px; }
+.push-unter { font-size: 12.5px; color: var(--ink3); margin-top: 2px; line-height: 1.45; }

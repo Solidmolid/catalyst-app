@@ -1,11 +1,11 @@
 /* Catalyst – Service Worker (App-Hülle offline, Daten immer frisch) */
 const CACHE_PREFIX = "catalyst-";
-const CACHE = "catalyst-v10";
+const CACHE = "catalyst-v11";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=10",
-  "./app.js?v=10",
+  "./styles.css?v=11",
+  "./app.js?v=11",
   "./vendor/supabase-2.110.3.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
@@ -46,4 +46,30 @@ self.addEventListener("fetch", (e) => {
       return res;
     }))
   );
+});
+
+// --- Push-Mitteilungen ------------------------------------------------------ //
+// Der Catalyst schickt kurze Texte (neue Meldung, neue KI-Einordnung). Ein Tipp
+// darauf öffnet die App direkt im passenden Reiter.
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { text: e.data ? e.data.text() : "" }; }
+  e.waitUntil(self.registration.showNotification(d.titel || "Catalyst", {
+    body: d.text || "",
+    tag: d.tag || undefined,
+    icon: "icons/icon-192.png",
+    badge: "icons/icon-192.png",
+    data: { ansicht: d.ansicht || "meldungen" },
+  }));
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const ansicht = e.notification.data?.ansicht || "meldungen";
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    for (const c of list) {
+      if ("focus" in c) { c.postMessage({ ansicht }); return c.focus(); }
+    }
+    return self.clients.openWindow(new URL(`./?ansicht=${ansicht}`, self.location).href);
+  }));
 });

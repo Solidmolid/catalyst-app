@@ -11,6 +11,8 @@
 const SUPABASE_URL = "https://uytacdogqercenlgbpgb.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_NmRBqjT43mYeYS_WJNsx2w_NmhfzIkg";
 const SEEN_KEY = "catalyst.meldungen.gesehen";
+// Öffentlicher Schlüssel für Push-Mitteilungen (der private liegt nur beim Catalyst).
+const VAPID_PUBLIC = "BHyvpkkybomq01QLWJiOKOSI0XP-swCz4HoswEylu09-YTxN76PxSPDa25_xkoFPWtZqf5G9TFeLq6T-RKPE3_M";
 
 const $ = (id) => document.getElementById(id);
 const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
@@ -755,6 +757,7 @@ function meldungsTag(ts) {
 function renderMeldungen() {
   const view = $("view-meldungen");
   view.replaceChildren();
+  view.appendChild(pushKarte());
   view.appendChild(el("p", "intro", MELD_ERKLAERUNG));
   if (!state.meldungen.length) {
     view.appendChild(empty("Noch keine Meldungen — es ist ruhig in deinem Depot."));
@@ -778,6 +781,88 @@ function renderMeldungen() {
     add(item, t, el("div", "msg-text", m.text));
     list.appendChild(item);
   }
+}
+
+// --------------------------------------------------------------------------- //
+// Push-Mitteilungen einschalten
+// --------------------------------------------------------------------------- //
+function b64ToBytes(b64) {
+  const s = atob((b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(s, (c) => c.charCodeAt(0));
+}
+
+function pushMoeglich() {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+}
+
+function istInstalliert() {
+  return window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
+}
+
+function pushKarte() {
+  const card = el("div", "card push-card");
+  const text = el("div", "push-text");
+  const btn = el("button", "pruef-btn", "Einschalten");
+  btn.type = "button";
+  btn.hidden = true;
+  add(card, text, btn);
+  const zeige = (titel, unter, knopf) => {
+    text.replaceChildren(el("div", "push-titel", titel), el("div", "push-unter", unter));
+    btn.hidden = !knopf;
+    if (knopf) btn.textContent = knopf;
+  };
+
+  if (!pushMoeglich()) {
+    const ios = /iphone|ipad/i.test(navigator.userAgent);
+    zeige("Mitteilungen aufs Handy",
+      ios && !istInstalliert()
+        ? "Geht auf dem iPhone nur in der installierten App: in Safari Teilen → „Zum Home-Bildschirm“, dann Catalyst von dort öffnen."
+        : "Dieses Gerät bzw. dieser Browser unterstützt keine Mitteilungen.", null);
+    return card;
+  }
+  if (Notification.permission === "denied") {
+    zeige("Mitteilungen blockiert", "In den Einstellungen des Handys unter Mitteilungen → Catalyst wieder erlauben.", null);
+    return card;
+  }
+  zeige("Mitteilungen aufs Handy", "Bei neuen Meldungen und neuen KI-Einordnungen.", null);
+  navigator.serviceWorker.ready.then((reg) => reg.pushManager.getSubscription()).then((sub) => {
+    if (sub && Notification.permission === "granted") {
+      zeige("Mitteilungen sind an", "Du bekommst neue Meldungen und KI-Einordnungen aufs Handy.", "Ausschalten");
+      btn.onclick = () => pushAus(sub, card);
+    } else {
+      zeige("Mitteilungen aufs Handy", "Bei neuen Meldungen und neuen KI-Einordnungen — sonst nichts.", "Einschalten");
+      btn.onclick = () => pushAn(card);
+    }
+  }).catch(() => {});
+  return card;
+}
+
+async function pushAn(card) {
+  const ersetzen = () => card.replaceWith(pushKarte());
+  try {
+    const erlaubt = await Notification.requestPermission();
+    if (erlaubt !== "granted") { ersetzen(); return; }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID_PUBLIC) });
+    const j = sub.toJSON();
+    const { error } = await client.from("catalyst_push_subs").insert({
+      endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, geraet: navigator.userAgent.slice(0, 120),
+    });
+    if (error && error.code !== "23505") throw error;     // 23505 = Gerät ist schon eingetragen
+    ersetzen();
+  } catch (err) {
+    showError(`Mitteilungen einschalten ging nicht: ${err.message || err}`);
+  }
+}
+
+async function pushAus(sub, card) {
+  try {
+    await client.from("catalyst_push_subs").delete().eq("endpoint", sub.endpoint);
+    await sub.unsubscribe();
+  } catch (err) {
+    showError(`Ausschalten ging nicht: ${err.message || err}`);
+  }
+  card.replaceWith(pushKarte());
 }
 
 function updateBadge() {
@@ -1090,6 +1175,7 @@ function show(screen) {
 async function onSession(session) {
   if (session) {
     show("app");
+    switchView(state.view);
     await load();
   } else {
     show("auth");
@@ -1137,6 +1223,13 @@ window.addEventListener("resize", () => {
 // Holt frische Daten, wenn die App aus dem Hintergrund zurückkommt.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && !$("app").hidden) load();
+});
+
+// Tipp auf eine Mitteilung: passenden Reiter öffnen (?ansicht=… bzw. Nachricht vom Service Worker)
+const startAnsicht = new URLSearchParams(location.search).get("ansicht");
+if (["depot", "meldungen", "radar"].includes(startAnsicht)) state.view = startAnsicht;
+navigator.serviceWorker?.addEventListener("message", (e) => {
+  if (["depot", "meldungen", "radar"].includes(e.data?.ansicht)) { switchView(e.data.ansicht); load(); }
 });
 
 client.auth.onAuthStateChange((event, session) => {
