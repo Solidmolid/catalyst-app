@@ -18,7 +18,8 @@ const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_K
 });
 
 const state = { view: "depot", feed: {}, meldungen: [], trades: [], verlauf: [], range: "Max",
-  depotWert: 0, loading: false, live: null, formOpen: false };
+  depotWert: 0, loading: false, live: null, formOpen: false,
+  pruefung: { aktiv: false, text: "", timer: null } };
 
 // --------------------------------------------------------------------------- //
 // Formatierung
@@ -742,6 +743,111 @@ function markSeen() {
 }
 
 // --------------------------------------------------------------------------- //
+// "Jetzt prüfen": Radar-Check auf GitHub anstoßen und verfolgen
+// --------------------------------------------------------------------------- //
+// Die Funktion "aktualisieren" startet den Check (frische Daten, geänderte Werte
+// gehen an die KI) und meldet, ob er noch läuft. Danach laden wir neu; warten noch
+// Werte auf die KI ("offen"), schauen wir minütlich nach, bis sie da sind.
+const PRUEF_TAKT_MS = 15000;
+const PRUEF_MAX_MS = 20 * 60000;
+const KI_TAKT_MS = 60000;
+
+function fmtUhr(ts) {
+  return new Date(ts).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+}
+
+function pruefZeile() {
+  const zeile = el("div", "pruef");
+  const btn = el("button", "pruef-btn", state.pruefung.aktiv ? "Prüft …" : "Jetzt prüfen");
+  btn.type = "button";
+  btn.id = "pruef-btn";
+  btn.disabled = state.pruefung.aktiv;
+  btn.addEventListener("click", jetztPruefen);
+  const text = el("span", "pruef-status", state.pruefung.text
+    || "Holt frische Daten und lässt geänderte Werte neu einordnen.");
+  text.id = "pruef-status";
+  add(zeile, btn, text);
+  return zeile;
+}
+
+function setPruefung(aktiv, text) {
+  state.pruefung.aktiv = aktiv;
+  state.pruefung.text = text;
+  const btn = $("pruef-btn"), st = $("pruef-status");
+  if (btn) { btn.disabled = aktiv; btn.textContent = aktiv ? "Prüft …" : "Jetzt prüfen"; }
+  if (st) st.textContent = text;
+}
+
+async function pruefFunktion(body) {
+  const { data, error } = await client.functions.invoke("aktualisieren", { body });
+  if (error) throw error;
+  return data || {};
+}
+
+async function jetztPruefen() {
+  if (state.pruefung.aktiv) return;
+  clearTimeout(state.pruefung.timer);
+  setPruefung(true, "Wird gestartet …");
+  try {
+    const r = await pruefFunktion({});
+    if (r.status === "nicht_eingerichtet") {
+      setPruefung(false, "Der Knopf ist noch nicht fertig eingerichtet — bis dahin aktualisiert die Routine am PC.");
+    } else if (r.status === "gerade_erst") {
+      setPruefung(false, `Gerade erst geprüft (${fmtUhr(r.lauf.seit)}) — in ein paar Minuten wieder möglich.`);
+    } else {
+      verfolgen(r.status === "laeuft" ? new Date(r.lauf.seit).getTime() : Date.now());
+    }
+  } catch (err) {
+    setPruefung(false, `Ging gerade nicht: ${err.message || err}`);
+  }
+}
+
+function verfolgen(start) {
+  setPruefung(true, "Prüft frische Daten … (dauert ca. 3–5 Min.)");
+  const tick = async () => {
+    if (Date.now() - start > PRUEF_MAX_MS) {
+      setPruefung(false, "Dauert ungewöhnlich lange — schau später nochmal rein.");
+      return;
+    }
+    try {
+      const r = await pruefFunktion({ status: true });
+      // Direkt nach dem Start zeigt GitHub kurz noch den vorigen Lauf -- weiter warten.
+      const unserer = r.lauf && new Date(r.lauf.seit).getTime() >= start - 120000;
+      if (r.status === "laeuft" || !unserer) {
+        state.pruefung.timer = setTimeout(tick, PRUEF_TAKT_MS);
+        return;
+      }
+      if (r.lauf.ergebnis !== "success") {
+        setPruefung(false, "Der Check ist fehlgeschlagen — beim nächsten Lauf geht es weiter.");
+        return;
+      }
+      await load();
+      kiAbwarten(Date.now());
+    } catch {
+      state.pruefung.timer = setTimeout(tick, PRUEF_TAKT_MS);
+    }
+  };
+  state.pruefung.timer = setTimeout(tick, PRUEF_TAKT_MS);
+}
+
+function kiAbwarten(start) {
+  const offen = state.feed.radar?.payload?.offen || [];
+  if (!offen.length) {
+    setPruefung(false, `Fertig (${fmtUhr(Date.now())}) — alles aktuell.`);
+    return;
+  }
+  if (Date.now() - start > PRUEF_MAX_MS) {
+    setPruefung(false, "Die neue KI-Einordnung kommt mit dem nächsten Lauf.");
+    return;
+  }
+  setPruefung(true, `Daten frisch. Die KI ordnet ${offen.length === 1 ? "einen Wert" : `${offen.length} Werte`} neu ein …`);
+  state.pruefung.timer = setTimeout(async () => {
+    try { await load(); } catch { /* nächster Versuch */ }
+    kiAbwarten(start);
+  }, KI_TAKT_MS);
+}
+
+// --------------------------------------------------------------------------- //
 // Radar
 // --------------------------------------------------------------------------- //
 function renderRadar() {
@@ -749,18 +855,25 @@ function renderRadar() {
   view.replaceChildren();
   const entry = state.feed.radar;
   const p = entry?.payload;
+  view.appendChild(pruefZeile());
   if (!p) {
-    view.appendChild(empty("Noch kein Tages-Radar. Er kommt mit dem nächsten Lauf der Routine (alle 3 Std.)."));
+    view.appendChild(empty("Noch kein Tages-Radar. Er kommt mit dem nächsten Check (alle 3 Std.)."));
     return;
   }
-  // Der Radar kommt von der Routine in der Claude Desktop-App (alle 3 Std.). Bleibt
-  // ein Lauf aus, ist meist die App bzw. der PC aus -- dann sagen wir das.
+  // Der Radar wird alle 3 Std. neu geprüft. Bleibt das aus, sagen wir es.
   const alt = (Date.now() - new Date(entry.updated_at)) / 3600000 >= RADAR_ALT_STD;
   const kopf = el("div", "radar-head");
   add(kopf, el("span", "stand", `${p.n_events ?? "?"} Events im Blick`),
     el("span", `stand radar-zeit${alt ? " alt" : ""}`, `Letzte Aktualisierung ${fmtAgo(entry.updated_at)}`));
-  view.appendChild(kopf);
-  if (alt) view.appendChild(el("div", "card hint", "Öffne die Claude Desktop-App am PC, um zu aktualisieren — der Radar läuft dort alle 3 Stunden."));
+  view.insertBefore(kopf, view.firstChild);
+  if (alt && !state.pruefung.aktiv) {
+    view.appendChild(el("div", "card hint", `Seit ${fmtAgo(entry.updated_at).replace("vor ", "")} keine Aktualisierung — drück auf „Jetzt prüfen“.`));
+  }
+  const offen = p.offen || [];
+  if (offen.length) {
+    const namen = offen.map((o) => o.asset || o.ticker).join(", ");
+    view.appendChild(el("div", "card hint", `Wird gerade neu eingeordnet: ${namen}. Die neue KI-Meinung kommt in ein paar Minuten.`));
+  }
 
   if (!(p.picks || []).length) view.appendChild(empty("Heute keine eingeordneten Picks."));
   const neuestes = (p.picks || []).reduce((m, k) => (k.seit && k.seit > m ? k.seit : m), "");

@@ -138,6 +138,15 @@ button { font: inherit; color: inherit; }
 .radar-zeit.alt { color: var(--neutral); font-weight: 600; }
 .hint { padding: 12px 14px; background: var(--tint-neutral); border-color: transparent; font-size: 14px; }
 
+/* "Jetzt prüfen": Knopf + Status in einer Zeile */
+.pruef { display: flex; align-items: center; gap: 12px; }
+.pruef-btn {
+  flex: none; padding: 9px 16px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--card); font-weight: 600; cursor: pointer;
+}
+.pruef-btn:disabled { opacity: 0.6; cursor: default; }
+.pruef-status { font-size: 12px; color: var(--ink3); line-height: 1.35; }
+
 .up { color: var(--up); }
 .down { color: var(--down); }
 
