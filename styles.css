@@ -17,9 +17,12 @@
   --on-accent: #17150f;
   --up: #7cc49a;
   --down: #e3806f;
-  --chance: #7cc49a;
-  --neutral: #b0aa9e;
-  --risiko: #e3806f;
+  --chance: #6fcf97;
+  --neutral: #e6b84f;
+  --risiko: #ef7a68;
+  --chance-bg: rgba(111, 207, 151, 0.16);
+  --neutral-bg: rgba(230, 184, 79, 0.16);
+  --risiko-bg: rgba(239, 122, 104, 0.16);
   --radius: 18px;
   --serif: ui-serif, "New York", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
@@ -48,9 +51,12 @@
     --on-accent: #fffdf8;
     --up: #2f7a4f;
     --down: #b2412f;
-    --chance: #2f7a4f;
-    --neutral: #6f6a5f;
-    --risiko: #b2412f;
+    --chance: #1f7a45;
+    --neutral: #9a6a00;
+    --risiko: #b2382a;
+    --chance-bg: rgba(31, 122, 69, 0.12);
+    --neutral-bg: rgba(200, 145, 20, 0.15);
+    --risiko-bg: rgba(178, 56, 42, 0.12);
     --series-1: #8c6a2f;
     --series-2: #a39c8f;
     --grid: rgba(23, 21, 15, 0.07);
@@ -235,12 +241,28 @@ details summary::-webkit-details-marker { display: none; }
 
 /* KI-Meinung als dezentes Etikett — bewusst kein Ampel-Signal */
 .label {
-  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em;
-  padding: 3px 8px; border-radius: 6px; white-space: nowrap; border: 1px solid currentColor;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 4px 9px; border-radius: 7px; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;
 }
-.label.chance { color: var(--chance); }
-.label.neutral { color: var(--neutral); }
-.label.risiko { color: var(--risiko); }
+.label::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.label.chance { color: var(--chance); background: var(--chance-bg); }
+.label.neutral { color: var(--neutral); background: var(--neutral-bg); }
+.label.risiko { color: var(--risiko); background: var(--risiko-bg); }
+
+/* Farbstreifen links: Chance grün, Neutral gelb, Risiko rot */
+.pick, .check { position: relative; }
+.pick.chance, .pick.neutral, .pick.risiko { padding-left: 20px; }
+.pick.chance::before, .pick.neutral::before, .pick.risiko::before,
+.check.chance::before, .check.neutral::before, .check.risiko::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+}
+.check.chance, .check.neutral, .check.risiko { padding-left: 18px; overflow: hidden; }
+.pick.chance::before, .check.chance::before { background: var(--chance); }
+.pick.neutral::before, .check.neutral::before { background: var(--neutral); }
+.pick.risiko::before, .check.risiko::before { background: var(--risiko); }
+.pick.chance { background: linear-gradient(90deg, var(--chance-bg), transparent 45%); }
+.pick.neutral { background: linear-gradient(90deg, var(--neutral-bg), transparent 45%); }
+.pick.risiko { background: linear-gradient(90deg, var(--risiko-bg), transparent 45%); }
 
 /* --- Verlauf (kompakt) ---------------------------------------------------- */
 .chart-card { padding: 16px 16px 10px; }

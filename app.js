@@ -1037,7 +1037,7 @@ function renderRadar() {
 
 function pickRow(k, neuestes) {
   const lbl = (k.label || "").toLowerCase();
-  const row = el("div", "pick");
+  const row = el("div", `pick ${lbl}`);
   const head = el("div", "pick-head");
   const name = el("div", "pick-name", k.asset);
   if (k.ticker) name.appendChild(el("span", "pos-ticker", k.ticker));
