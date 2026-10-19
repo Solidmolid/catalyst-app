@@ -464,3 +464,5 @@ details summary::-webkit-details-marker { display: none; }
 .aktie-sheet .sheet-head { align-items: flex-start; }
 .aktie-sheet .sheet-head h2 { font-size: 24px; }
 .aktie-sheet .ac-wert { font-size: 32px; }
+
+.version { display: block; margin-top: 10px; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.7; }

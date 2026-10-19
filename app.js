@@ -1442,7 +1442,17 @@ client.auth.onAuthStateChange((event, session) => {
 client.auth.getSession().then(({ data }) => onSession(data.session));
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}));
+  window.addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").then((reg) => {
+    // Beim Zurückkehren in die App nach einer neuen Version schauen …
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+  }).catch(() => {}));
+  // … und sobald sie übernommen ist, einmal neu laden -- so ist das Handy immer aktuell.
+  let neuGeladen = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (neuGeladen || !navigator.serviceWorker.controller) return;
+    neuGeladen = true;
+    location.reload();
+  });
 }
 
 // localStorage kann im privaten Modus fehlen oder werfen — dann eben ohne Badge-Gedächtnis.
