@@ -426,3 +426,13 @@ details summary::-webkit-details-marker { display: none; }
 .fokus-zeile::before { content: ""; position: absolute; left: 0; top: 16px; width: 6px; height: 6px; border-radius: 50%; background: var(--neutral); }
 .fokus-name { font-weight: 600; font-size: 14.5px; }
 .fokus-grund { font-size: 12.5px; color: var(--neutral); }
+
+/* Radar-Brille: dieselbe Bewertung wie bei den Kaufideen */
+.sig.gut { background: var(--chance-bg); color: var(--chance); }
+.brille-kopf { display: flex; justify-content: space-between; align-items: baseline; }
+.brille-wert { font-family: var(--serif); font-size: 18px; }
+.brille-bar { height: 4px; border-radius: 2px; background: var(--line); margin-top: 8px; overflow: hidden; }
+.brille-bar span { display: block; height: 100%; background: var(--ink3); border-radius: 2px; }
+.brille-bar span.gut { background: var(--chance); }
+.brille .sig-text { padding-left: 0; }
+.brille .sig-text::before { display: none; }

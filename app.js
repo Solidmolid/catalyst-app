@@ -266,8 +266,9 @@ function positionRow(r, mitTermin) {
     el("div", "pos-line2", line2), el("div", `pos-pct ${trend(r.gewinn_pct)}`, fmtPct(r.gewinn_pct)));
   // Lage-Signale (neutral): kurz an der Zeile, ausführlich beim Aufklappen
   const signale = r.signale || [];
-  if (signale.length) {
+  if (signale.length || (r.radar_brille && r.radar_brille.score >= 45)) {
     const chips = el("div", "sig-row");
+    if (r.radar_brille && r.radar_brille.score >= 45) chips.appendChild(el("span", "sig gut", `Radar ${r.radar_brille.score} · wie ein Pick`));
     for (const sg of signale) chips.appendChild(el("span", `sig ${sg.ton === "achtung" ? "achtung" : ""}`, sg.kurz));
     s.appendChild(chips);
   }
@@ -289,6 +290,18 @@ function positionRow(r, mitTermin) {
       ? cell(r.termin_art ? `nächste ${r.termin_art}` : "nächster Termin", r.termin ? fmtDay(r.termin) : "—", "")
       : cell("Kurs", fmtEur(r.kurs_eur), ""));
   d.appendChild(grid);
+  const rb = r.radar_brille;
+  if (rb) {
+    const box = el("div", "sig-box brille");
+    const kopf = el("div", "brille-kopf");
+    add(kopf, el("span", "check-title", "Radar-Brille · wie bei den Kaufideen"), el("span", "brille-wert", `${rb.score}/100`));
+    const bar = el("div", "brille-bar");
+    const fill = el("span", rb.score >= 45 ? "gut" : "");
+    fill.style.width = `${Math.max(2, rb.score)}%`;
+    bar.appendChild(fill);
+    add(box, kopf, bar, el("p", "sig-text", rb.text));
+    d.appendChild(box);
+  }
   if (signale.length) {
     const box = el("div", "sig-box");
     box.appendChild(el("div", "check-title", "Lage-Signale"));
