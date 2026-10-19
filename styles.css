@@ -448,3 +448,12 @@ details summary::-webkit-details-marker { display: none; }
 .ac-cross { stroke: var(--ink3); stroke-width: 1; }
 .ac-seg { justify-content: space-between; margin-top: 8px; }
 .ac-seg button { flex: 1; }
+
+/* Eigene Seite je Aktie */
+.tippbar { cursor: pointer; }
+.tippbar:active { background: var(--surface-2); }
+.aktie-sheet { max-height: 94vh; }
+.aktie-sheet .pos-detail { background: transparent; padding: 0; }
+.aktie-sheet .sheet-head { align-items: flex-start; }
+.aktie-sheet .sheet-head h2 { font-size: 24px; }
+.aktie-sheet .ac-wert { font-size: 32px; }

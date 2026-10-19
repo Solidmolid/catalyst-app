@@ -21,7 +21,7 @@ const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_K
 
 const state = { view: "depot", feed: {}, meldungen: [], trades: [], verlauf: [], range: "Max",
   depotWert: 0, loading: false, live: null,
-  pruefung: { aktiv: false, text: "", timer: null } };
+  pruefung: { aktiv: false, text: "", timer: null }, aktieOeffnen: {} };
 
 // --------------------------------------------------------------------------- //
 // Formatierung
@@ -238,10 +238,7 @@ function hinschauenKarte(aktien) {
   for (const { r, gruende } of liste.slice(0, 4)) {
     const zeile = el("div", "fokus-zeile");
     add(zeile, el("span", "fokus-name", r.name), el("span", "fokus-grund", gruende.join(" · ")));
-    zeile.addEventListener("click", () => {
-      const ziel = [...document.querySelectorAll(".pos-row")].find((d) => d.dataset.ticker === r.ticker);
-      if (ziel) { ziel.open = true; ziel.scrollIntoView({ behavior: "smooth", block: "center" }); }
-    });
+    zeile.addEventListener("click", () => state.aktieOeffnen[r.ticker]?.());
     card.appendChild(zeile);
   }
   card.appendChild(el("p", "sig-hinweis", "Sortiert nach Warnsignalen, nahen Zahlen und KI-Lage — kein Verkaufsrat."));
@@ -256,9 +253,9 @@ function svgIcon(d) {
 
 /** Eine Position als aufklappbare Zeile: oben das Wichtigste, aufgeklappt die Details. */
 function positionRow(r, mitTermin) {
-  const row = el("details", "pos-row");
+  const row = el("div", "pos-row");
   row.dataset.ticker = r.ticker;
-  const s = el("summary", "pos-sum");
+  const s = el("div", "pos-sum tippbar");
   const anteil = state.depotWert && r.wert_eur != null ? r.wert_eur / state.depotWert : null;
   const line2 = [r.ticker, anteil != null ? fmtShare(anteil) : null,
     mitTermin && r.termin ? `${r.termin_art || "Termin"} ${inDays(r.termin)}` : null].filter(Boolean).join(" · ");
@@ -284,8 +281,10 @@ function positionRow(r, mitTermin) {
   const d = el("div", "pos-detail");
   const chartBox = el("div", "aktien-chart");
   d.appendChild(chartBox);
-  // Erst beim Aufklappen zeichnen -- vorher hat der Bereich keine Breite.
-  row.addEventListener("toggle", () => { if (row.open) aktienChart(chartBox, r); });
+  // Tippen öffnet die eigene Seite der Aktie (Chart oben, wie bei Trade Republic)
+  const oeffnen = () => openAktieSheet(r, d, chartBox);
+  state.aktieOeffnen[r.ticker] = oeffnen;
+  s.addEventListener("click", (e) => { e.preventDefault(); oeffnen(); });
   const grid = el("div", "pos-grid");
   add(grid,
     cell("heute", fmtPct(r.tag_pct), trend(r.tag_pct)),
@@ -321,8 +320,28 @@ function positionRow(r, mitTermin) {
   if (r.app_eintraege) d.appendChild(el("p", "pos-note", `inkl. ${r.app_eintraege} Eintrag/Einträge aus der App`));
   const checks = state.feed.checks?.payload?.checks?.[r.ticker] || [];
   if (checks.length) d.appendChild(checkBlock(checks[0], checks.length - 1));
-  row.appendChild(d);
   return row;
+}
+
+/** Eigene Seite je Aktie: Chart groß oben, darunter Zahlen, Radar-Brille, Signale, KI-Check. */
+function openAktieSheet(r, inhalt, chartBox) {
+  const back = el("div", "sheet-backdrop");
+  const sheet = el("div", "sheet aktie-sheet");
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("aria-label", r.name);
+  const close = () => { back.remove(); sheet.remove(); };
+  back.addEventListener("click", close);
+  const head = el("div", "sheet-head");
+  const titel = el("div");
+  add(titel, el("h2", null, r.name), el("div", "pos-line2", [r.ticker, r.wert_eur != null ? `${fmtEur(r.wert_eur)} im Depot` : null, r.gewinn_pct != null ? `${fmtPct(r.gewinn_pct)} seit Einstand` : null].filter(Boolean).join(" · ")));
+  const x = el("button", "icon-btn", "×");
+  x.type = "button";
+  x.setAttribute("aria-label", "Schließen");
+  x.addEventListener("click", close);
+  add(head, titel, x);
+  add(sheet, el("div", "sheet-grip"), head, inhalt);
+  document.body.append(back, sheet);
+  aktienChart(chartBox, r);
 }
 
 // --------------------------------------------------------------------------- //
