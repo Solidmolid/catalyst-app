@@ -282,6 +282,10 @@ function positionRow(r, mitTermin) {
   row.appendChild(s);
 
   const d = el("div", "pos-detail");
+  const chartBox = el("div", "aktien-chart");
+  d.appendChild(chartBox);
+  // Erst beim Aufklappen zeichnen -- vorher hat der Bereich keine Breite.
+  row.addEventListener("toggle", () => { if (row.open) aktienChart(chartBox, r); });
   const grid = el("div", "pos-grid");
   add(grid,
     cell("heute", fmtPct(r.tag_pct), trend(r.tag_pct)),
@@ -319,6 +323,113 @@ function positionRow(r, mitTermin) {
   if (checks.length) d.appendChild(checkBlock(checks[0], checks.length - 1));
   row.appendChild(d);
   return row;
+}
+
+// --------------------------------------------------------------------------- //
+// Kurs-Chart je Aktie (wie bei Trade Republic): Zeitraum wählen, Finger drauf = Kurs
+// --------------------------------------------------------------------------- //
+const CHART_ZEITRAEUME = [["1T", "1T", 0], ["1W", "1W", 0], ["1M", "1J", 31], ["6M", "1J", 183], ["1J", "1J", 0], ["5J", "5J", 0]];
+
+function chartPunkte(ticker, zeitraum) {
+  const daten = state.feed.charts?.payload?.ticker?.[ticker];
+  if (!daten) return null;
+  const [, quelle, tage] = CHART_ZEITRAEUME.find(([k]) => k === zeitraum);
+  let pts = daten[quelle] || [];
+  if (tage && pts.length) {
+    const grenze = pts[pts.length - 1][0] - tage * 86400000;
+    pts = pts.filter(([t]) => t >= grenze);
+  }
+  return pts;
+}
+
+function aktienChart(box, r) {
+  box.replaceChildren();
+  const zeitraum = state.chartZeitraum || "1M";
+  let pts = chartPunkte(r.ticker, zeitraum);
+  if (!pts) {
+    box.appendChild(el("p", "chart-sub", "Kursverlauf kommt mit dem nächsten Depot-Lauf (Mo–Fr stündlich)."));
+    return;
+  }
+  pts = pts.slice();
+  // Live-Kurs als letzter Punkt (wenn frischer als der letzte gespeicherte)
+  if (state.live?.ok && r.kurs_eur != null && (zeitraum === "1T" || zeitraum === "1W")) {
+    const jetzt = Date.now();
+    if (!pts.length || jetzt - pts[pts.length - 1][0] > 5 * 60000) pts.push([jetzt, r.kurs_eur]);
+  }
+  if (pts.length < 2) {
+    box.appendChild(el("p", "chart-sub", "Für diesen Zeitraum gibt es noch keine Kurse."));
+  }
+  const kopf = el("div", "ac-kopf");
+  const wert = el("div", "ac-wert num");
+  const diff = el("div", "ac-diff");
+  add(kopf, wert, diff);
+  const holder = el("div", "ac-holder");
+  const seg = el("div", "range-seg ac-seg");
+  for (const [k] of CHART_ZEITRAEUME) {
+    const b = el("button", k === zeitraum ? "is-active" : "", k);
+    b.type = "button";
+    b.addEventListener("click", (e) => { e.preventDefault(); state.chartZeitraum = k; aktienChart(box, r); });
+    seg.appendChild(b);
+  }
+  add(box, kopf, holder, seg);
+  if (pts.length < 2) return;
+
+  const start = pts[0][1], ende = pts[pts.length - 1][1];
+  const zeigeKopf = (kurs, t) => {
+    wert.textContent = fmtEur(kurs);
+    const d = kurs - start, p = (kurs / start - 1) * 100;
+    diff.textContent = `${d >= 0 ? "+" : "−"}${fmtEur(Math.abs(d))} (${fmtPct(p)})` + (t ? ` · ${zeitText(t, zeitraum)}` : ` · ${zeitraum}`);
+    diff.className = `ac-diff ${trend(d)}`;
+  };
+  zeigeKopf(ende, null);
+
+  requestAnimationFrame(() => {
+    const W = Math.max(260, holder.clientWidth || 300), H = 170, pad = 8;
+    const werte = pts.map((p) => p[1]);
+    const lo = Math.min(...werte), hi = Math.max(...werte);
+    const x = (i) => (i / (pts.length - 1)) * W;
+    const y = (v) => pad + (H - 2 * pad) * (1 - (v - lo) / (hi - lo || 1));
+    const farbe = ende >= start ? "var(--up)" : "var(--down)";
+    const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: "ac-svg" });
+    const linie = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join("");
+    const grad = `g${r.ticker.replace(/[^A-Za-z0-9]/g, "")}`;
+    const defs = svg("defs");
+    const lg = svg("linearGradient", { id: grad, x1: 0, y1: 0, x2: 0, y2: 1 });
+    lg.appendChild(svg("stop", { offset: "0", "stop-color": farbe, "stop-opacity": "0.22" }));
+    lg.appendChild(svg("stop", { offset: "1", "stop-color": farbe, "stop-opacity": "0" }));
+    defs.appendChild(lg);
+    root.appendChild(defs);
+    root.appendChild(svg("path", { d: `${linie}L${W},${H}L0,${H}Z`, fill: `url(#${grad})` }));
+    // Startlinie (gestrichelt) wie bei TR: Bezugspunkt des Zeitraums
+    root.appendChild(svg("line", { x1: 0, x2: W, y1: y(start), y2: y(start), class: "ac-start" }));
+    root.appendChild(svg("path", { d: linie, fill: "none", stroke: farbe, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    const cross = svg("line", { y1: 0, y2: H, class: "ac-cross", visibility: "hidden" });
+    const dot = svg("circle", { r: 4.5, fill: farbe, stroke: "var(--surface-2)", "stroke-width": 2, visibility: "hidden" });
+    add(root, cross, dot);
+    const zeige = (clientX) => {
+      const rect = root.getBoundingClientRect();
+      const i = Math.max(0, Math.min(pts.length - 1, Math.round(((clientX - rect.left) / rect.width) * (pts.length - 1))));
+      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i));
+      dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(pts[i][1]));
+      cross.setAttribute("visibility", "visible"); dot.setAttribute("visibility", "visible");
+      zeigeKopf(pts[i][1], pts[i][0]);
+    };
+    const weg = () => { cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); zeigeKopf(ende, null); };
+    root.addEventListener("pointerdown", (e) => zeige(e.clientX));
+    root.addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "mouse") zeige(e.clientX); });
+    root.addEventListener("pointerup", weg);
+    root.addEventListener("pointerleave", weg);
+    root.addEventListener("touchmove", (e) => { e.preventDefault(); zeige(e.touches[0].clientX); }, { passive: false });
+    root.addEventListener("touchend", weg);
+    holder.appendChild(root);
+  });
+}
+
+function zeitText(t, zeitraum) {
+  const d = new Date(t);
+  if (zeitraum === "1T") return d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr";
+  if (zeitraum === "1W") return d.toLocaleString("de-DE", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
 
 function openTradeSheet() {

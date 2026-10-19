@@ -436,3 +436,15 @@ details summary::-webkit-details-marker { display: none; }
 .brille-bar span.gut { background: var(--chance); }
 .brille .sig-text { padding-left: 0; }
 .brille .sig-text::before { display: none; }
+
+/* Kurs-Chart je Aktie (wie bei Trade Republic) */
+.aktien-chart { margin: 4px 0 12px; }
+.ac-kopf { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.ac-wert { font-size: 24px; font-family: var(--serif); }
+.ac-diff { font-size: 13px; font-weight: 500; }
+.ac-holder { margin: 0 -4px; touch-action: pan-y; }
+.ac-svg { display: block; max-width: 100%; touch-action: none; }
+.ac-start { stroke: var(--line-strong); stroke-dasharray: 2 4; stroke-width: 1; }
+.ac-cross { stroke: var(--ink3); stroke-width: 1; }
+.ac-seg { justify-content: space-between; margin-top: 8px; }
+.ac-seg button { flex: 1; }

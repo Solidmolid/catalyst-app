@@ -1,16 +1,17 @@
 /* Catalyst – Service Worker (App-Hülle offline, Daten immer frisch) */
 const CACHE_PREFIX = "catalyst-";
-const CACHE = "catalyst-v17";
+const CACHE = "catalyst-v18";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=17",
-  "./app.js?v=17",
+  "./styles.css?v=18",
+  "./app.js?v=18",
   "./vendor/supabase-2.110.3.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
+  "./icons/icon-v2-192.png",
+  "./icons/icon-v2-512.png",
+  "./icons/apple-touch-icon-v2.png",
 ];
 const STATIC_URLS = new Set(ASSETS.map((asset) => new URL(asset, self.location).href));
 
@@ -57,8 +58,8 @@ self.addEventListener("push", (e) => {
   e.waitUntil(self.registration.showNotification(d.titel || "Catalyst", {
     body: d.text || "",
     tag: d.tag || undefined,
-    icon: "icons/icon-192.png",
-    badge: "icons/icon-192.png",
+    icon: "icons/icon-v2-192.png",
+    badge: "icons/icon-v2-192.png",
     data: { ansicht: d.ansicht || "meldungen" },
   }));
 });
