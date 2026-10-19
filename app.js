@@ -162,6 +162,9 @@ function renderDepot() {
   // Aktive Hinweise (deine Marken, große Bewegung, naher Termin)
   for (const h of entry.payload.hinweise || []) view.appendChild(el("div", "alert", h.text));
 
+  const fokus = hinschauenKarte(aktien);
+  if (fokus) view.appendChild(fokus);
+
   const liste = (titel, rows, mitTermin) => {
     if (!rows.length) return;
     view.appendChild(el("div", "section-title", titel));
@@ -207,6 +210,44 @@ function renderDepot() {
   fab.hidden = state.view !== "depot" || $("app").hidden;
 }
 
+/** "Genauer hinschauen": deine Aktien nach Dringlichkeit — aus Fakten, nicht aus Prognosen.
+ *  Punkte: gelbe Lage-Signale, Zahlen in ≤ 7 Tagen, letzter KI-Check "Risiko", großer Tagesausschlag. */
+function hinschauenKarte(aktien) {
+  const liste = aktien.map((r) => {
+    const gruende = [];
+    let punkte = 0;
+    for (const sg of r.signale || []) {
+      if (sg.ton === "achtung") { punkte += 2; gruende.push(sg.kurz); }
+    }
+    if (r.termin) {
+      const tage = daysUntil(r.termin);
+      if (tage >= 0 && tage <= 7) { punkte += 1; gruende.push(`Zahlen ${inDays(r.termin)}`); }
+    }
+    const check = state.feed.checks?.payload?.checks?.[r.ticker]?.[0];
+    if (check?.label === "Risiko") { punkte += 2; gruende.push("KI-Check: Risiko"); }
+    if (r.tag_pct != null && Math.abs(r.tag_pct) >= 5) { punkte += 1; gruende.push(`heute ${fmtPct(r.tag_pct)}`); }
+    return { r, punkte, gruende };
+  }).filter((x) => x.punkte > 0).sort((a, b) => b.punkte - a.punkte);
+
+  const card = el("div", "card fokus");
+  card.appendChild(el("div", "hero-label", "Genauer hinschauen"));
+  if (!liste.length) {
+    card.appendChild(el("p", "chart-sub", "Alles ruhig — keine deiner Aktien zeigt gerade ein Warnsignal."));
+    return card;
+  }
+  for (const { r, gruende } of liste.slice(0, 4)) {
+    const zeile = el("div", "fokus-zeile");
+    add(zeile, el("span", "fokus-name", r.name), el("span", "fokus-grund", gruende.join(" · ")));
+    zeile.addEventListener("click", () => {
+      const ziel = [...document.querySelectorAll(".pos-row")].find((d) => d.dataset.ticker === r.ticker);
+      if (ziel) { ziel.open = true; ziel.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    });
+    card.appendChild(zeile);
+  }
+  card.appendChild(el("p", "sig-hinweis", "Sortiert nach Warnsignalen, nahen Zahlen und KI-Lage — kein Verkaufsrat."));
+  return card;
+}
+
 function svgIcon(d) {
   const s = svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
   s.appendChild(svg("path", { d }));
@@ -216,6 +257,7 @@ function svgIcon(d) {
 /** Eine Position als aufklappbare Zeile: oben das Wichtigste, aufgeklappt die Details. */
 function positionRow(r, mitTermin) {
   const row = el("details", "pos-row");
+  row.dataset.ticker = r.ticker;
   const s = el("summary", "pos-sum");
   const anteil = state.depotWert && r.wert_eur != null ? r.wert_eur / state.depotWert : null;
   const line2 = [r.ticker, anteil != null ? fmtShare(anteil) : null,
@@ -473,7 +515,7 @@ function verlaufTabelle(pts) {
   return det;
 }
 
-const ANLASS = { vor: "vor dem Termin", nach: "nach dem Termin", bewegung: "starke Kursbewegung" };
+const ANLASS = { vor: "vor dem Termin", nach: "nach dem Termin", bewegung: "starke Kursbewegung", woche: "Wochen-Check" };
 
 /** Neuester KI-Depot-Check zu einer Position: Lage-Einordnung, kein Kauf-/Verkaufsrat. */
 function checkBlock(c, aeltere) {

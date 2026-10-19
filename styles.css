@@ -418,3 +418,11 @@ details summary::-webkit-details-marker { display: none; }
 .sig-text::before { content: ""; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--ink3); }
 .sig-text.achtung::before { background: var(--neutral); }
 .sig-hinweis { margin: 10px 0 0; font-size: 11.5px; color: var(--ink3); }
+
+/* Genauer hinschauen */
+.fokus { padding: 16px; }
+.fokus-zeile { display: flex; flex-direction: column; gap: 2px; padding: 10px 0 10px 14px; border-top: 1px solid var(--line); cursor: pointer; position: relative; }
+.fokus-zeile:first-of-type { border-top: 0; margin-top: 6px; }
+.fokus-zeile::before { content: ""; position: absolute; left: 0; top: 16px; width: 6px; height: 6px; border-radius: 50%; background: var(--neutral); }
+.fokus-name { font-weight: 600; font-size: 14.5px; }
+.fokus-grund { font-size: 12.5px; color: var(--neutral); }
