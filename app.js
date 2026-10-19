@@ -1359,7 +1359,7 @@ function switchView(name) {
   }
   for (const v of ["depot", "meldungen", "radar"]) $(`view-${v}`).hidden = v !== name;
   if ($("fab")) $("fab").hidden = name !== "depot";
-  window.scrollTo({ top: 0 });
+  $("scroller").scrollTo({ top: 0 });
   if (name === "meldungen") markSeen(); else updateBadge();
   if (name === "depot") renderDepot();   // Kurve braucht die sichtbare Breite
 }

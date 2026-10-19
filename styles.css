@@ -101,7 +101,7 @@ svg { display: block; }
 @keyframes atmen { 50% { opacity: 0.55; transform: scale(0.97); } }
 
 .auth {
-  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  height: 100%; overflow-y: auto; display: flex; align-items: center; justify-content: center;
   padding: max(32px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom));
 }
 .auth-card { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; }
@@ -131,9 +131,16 @@ svg { display: block; }
 }
 
 /* --- Rahmen ---------------------------------------------------------------- */
-.app {
-  max-width: 620px; margin: 0 auto;
-  padding: max(10px, env(safe-area-inset-top)) 20px calc(96px + env(safe-area-inset-bottom));
+/* Nur der Inhalt scrollt; die Leiste unten ist fester Teil des Bildschirms.
+   (Eine position:fixed-Leiste rutscht auf dem iPhone beim Federn mit.) */
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+.app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+.scroller {
+  flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
+}
+.scroller > * { max-width: 620px; margin-left: auto; margin-right: auto; }
+.scroller {
+  padding: max(10px, env(safe-area-inset-top)) 20px 24px;
 }
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 18px; }
 .brand { display: flex; align-items: center; gap: 12px; }
@@ -152,7 +159,7 @@ svg { display: block; }
 
 /* Navigation unten — wie eine echte App */
 .tabs {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  flex: none; position: relative; z-index: 20;
   display: grid; grid-template-columns: repeat(3, 1fr);
   padding: 8px max(12px, env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom));
   background: color-mix(in srgb, var(--bg) 82%, transparent);

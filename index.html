@@ -18,7 +18,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon-v2.png" />
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 <title>Catalyst</title>
-<link rel="stylesheet" href="styles.css?v=19" />
+<link rel="stylesheet" href="styles.css?v=20" />
 </head>
 <body>
 
@@ -45,6 +45,7 @@
 </section>
 
 <main id="app" class="app" hidden>
+  <div id="scroller" class="scroller">
   <header class="topbar">
     <div class="brand"><img src="icons/icon.svg" alt="" /><span class="wordmark">Catalyst</span></div>
     <div class="topbar-actions">
@@ -67,6 +68,7 @@
     Fakten, deine eigenen Marken und klar gekennzeichnete KI-Meinung —
     keine Anlageberatung. Die Entscheidung liegt bei dir.
   </footer>
+  </div>
 
   <nav class="tabs" role="tablist">
     <button type="button" role="tab" data-view="depot" aria-selected="true">
@@ -85,6 +87,6 @@
 </main>
 
 <script src="vendor/supabase-2.110.3.js"></script>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>
