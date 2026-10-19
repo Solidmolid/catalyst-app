@@ -515,7 +515,7 @@ function verlaufTabelle(pts) {
   return det;
 }
 
-const ANLASS = { vor: "vor dem Termin", nach: "nach dem Termin", bewegung: "starke Kursbewegung", woche: "Wochen-Check" };
+const ANLASS = { vor: "vor dem Termin", nach: "nach dem Termin", bewegung: "starke Kursbewegung", woche: "Wochen-Check", aenderung: "Lage geändert" };
 
 /** Neuester KI-Depot-Check zu einer Position: Lage-Einordnung, kein Kauf-/Verkaufsrat. */
 function checkBlock(c, aeltere) {

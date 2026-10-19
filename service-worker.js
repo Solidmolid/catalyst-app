@@ -1,11 +1,11 @@
 /* Catalyst – Service Worker (App-Hülle offline, Daten immer frisch) */
 const CACHE_PREFIX = "catalyst-";
-const CACHE = "catalyst-v15";
+const CACHE = "catalyst-v16";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=15",
-  "./app.js?v=15",
+  "./styles.css?v=16",
+  "./app.js?v=16",
   "./vendor/supabase-2.110.3.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
