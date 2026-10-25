@@ -510,5 +510,28 @@ details summary::-webkit-details-marker { display: none; }
 .claude-gespraech:first-child { border-top: 0; }
 .claude-leeren { border: 0; background: transparent; cursor: pointer; align-self: flex-start; padding: 0 2px; }
 .tabs button[data-view="claude"][aria-selected="true"] { color: var(--claude); }
+.chat-status { display: inline-block; margin: 2px 0 4px; font-size: 11.5px; font-weight: 600; color: var(--ink3); }
+.chat-status.an { color: var(--up); }
+.chat-leiste { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.chat-leiste > .ghost { padding: 8px 14px; font-size: 13px; }
+.chat-frueher { width: 100%; }
+.chat-frueher .claude-gespraech { display: flex; align-items: center; gap: 6px; padding: 8px 0; }
+.chat-oeffnen { flex: 1; text-align: left; border: 0; background: transparent; color: var(--ink); font: inherit; padding: 4px 6px; border-radius: 10px; cursor: pointer; }
+.chat-verlauf { display: flex; flex-direction: column; gap: 10px; }
+.blase { max-width: 88%; padding: 10px 14px; border-radius: 16px; font-size: 15px; line-height: 1.5; }
+.blase p { margin: 0 0 6px; }
+.blase p:last-child { margin-bottom: 0; }
+.blase.du { align-self: flex-end; background: var(--claude-soft); border-bottom-right-radius: 6px; white-space: pre-wrap; }
+.blase.claude { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 6px; }
+.blase.claude.fehler { border-color: var(--risiko); }
+.blase ul { margin: 2px 0 8px; padding-left: 20px; }
+.blase li { margin: 2px 0; }
+.md-titel { font-weight: 700; margin-top: 6px !important; }
+.blase-thema { font-size: 11px; font-weight: 700; color: var(--claude); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 2px; }
+.blase-meta { margin-top: 6px; font-size: 11px; color: var(--ink3); }
+.blase.denkt { display: flex; align-items: center; gap: 10px; color: var(--ink2); }
+.punkte { width: 22px; height: 8px; flex: none; background:
+  radial-gradient(circle, var(--claude) 3px, transparent 3.5px) 0 50% / 8px 8px repeat-x; animation: atmen 1.2s ease-in-out infinite; }
+.claude-senden:disabled { opacity: 0.5; cursor: default; }
 
 .version { display: block; margin-top: 10px; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.7; }

@@ -21,7 +21,8 @@ const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_K
 
 const state = { view: "depot", feed: {}, meldungen: [], trades: [], verlauf: [], range: "Max",
   depotWert: 0, loading: false, live: null,
-  pruefung: { aktiv: false, text: "", timer: null }, aktieOeffnen: {} };
+  pruefung: { aktiv: false, text: "", timer: null }, aktieOeffnen: {},
+  chat: { gespraech: null, zeilen: [], bereit: false, pcAn: null, weg: null, timer: null, sendet: false, fehler: "" } };
 
 // --------------------------------------------------------------------------- //
 // Formatierung
@@ -1308,13 +1309,15 @@ function bilanzCard() {
 }
 
 // --------------------------------------------------------------------------- //
-// Claude: Gespräch mit dem ganzen Depot-Wissen. Läuft über dein Claude-Abo —
-// die App baut Frage + Depot-Lage zusammen und öffnet damit einen neuen Chat in
-// Claude. Kein API-Schlüssel, keine Kosten pro Nachricht.
+// Claude: Chat mit dem ganzen Depot-Wissen. Läuft über dein Claude-Abo — die App
+// schreibt die Frage nach Supabase (catalyst_chat), die Chat-Brücke des Catalyst
+// (auf deinem PC, sonst auf GitHub) fragt Claude und schreibt die Antwort zurück.
+// Kein API-Schlüssel, keine Kosten pro Nachricht. Ohne Brücke: Link in die Claude-App.
 // --------------------------------------------------------------------------- //
 const CLAUDE_NEU = "https://claude.ai/new?q=";
 const CLAUDE_MAX_URL = 8000;   // längere Links schneiden manche Browser ab
-const GESPRAECHE_KEY = "catalyst.claude.gespraeche";
+const GESPRAECH_KEY = "catalyst.chat.gespraech";
+const CHAT_NACHFASSEN_MS = 45000;   // so lange darf der PC brauchen, bevor GitHub einspringt
 const CLAUDE_ICON = "M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4";
 
 /** Der kleine orange Punkt: öffnet den Claude-Reiter mit diesem Thema. */
@@ -1327,7 +1330,7 @@ function claudePunkt(thema, vorher) {
   b.addEventListener("click", (e) => {
     e.preventDefault(); e.stopPropagation();
     vorher?.();
-    state.claudeThema = thema;
+    neuesGespraech(thema);
     switchView("claude");
     $("claude-frage")?.focus();
   });
@@ -1429,46 +1432,203 @@ function claudeLink(frage, thema) {
   return { voll, url: CLAUDE_NEU + encodeURIComponent(teile.join("\n\n")) };
 }
 
-function gespraeche() {
-  try { return JSON.parse(localGet(GESPRAECHE_KEY) || "[]"); } catch { return []; }
-}
-
-function claudeFragen(frage, thema) {
+/** Fallback ohne Chat-Brücke: neuer Chat in der Claude-App, Text in der Zwischenablage. */
+function inClaudeAppFragen(frage, thema) {
   const { voll, url } = claudeLink(frage, thema);
   navigator.clipboard?.writeText(voll).catch(() => {});
   window.open(url, "_blank", "noopener");
-  const liste = gespraeche();
-  liste.unshift({ zeit: Date.now(), frage: frage.trim(), thema: thema ? { art: thema.art, ticker: thema.ticker, name: thema.name } : null });
-  localSet(GESPRAECHE_KEY, JSON.stringify(liste.slice(0, 25)));
+}
+
+function neueGespraechsId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `g-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function neuesGespraech(thema = null) {
+  state.chat.gespraech = neueGespraechsId();
+  localSet(GESPRAECH_KEY, state.chat.gespraech);
+  state.claudeThema = thema;
+}
+
+/** Alle Chat-Zeilen deines Kontos (RLS) — fehlt die Tabelle noch, bleibt der Link-Weg. */
+async function chatLaden() {
+  const res = await client.from("catalyst_chat").select("id,created_at,gespraech,rolle,text,thema,status,von")
+    .order("created_at", { ascending: true }).limit(500);
+  state.chat.bereit = !res.error;
+  state.chat.zeilen = res.error ? [] : (res.data || []);
+}
+
+async function chatFunktion(body = {}) {
+  try {
+    const { data } = await client.functions.invoke("chat", { body });
+    if (data?.pc_an != null) state.chat.pcAn = data.pc_an;
+    return data || {};
+  } catch { return {}; }
+}
+
+function aktuelleNachrichten() {
+  return state.chat.zeilen.filter((z) => z.gespraech === state.chat.gespraech);
+}
+
+function wartetAufAntwort() {
+  return aktuelleNachrichten().some((z) => z.rolle === "user" && (z.status === "offen" || z.status === "in_arbeit"));
+}
+
+/** Solange eine Frage offen ist: alle 3 s nachsehen. Antwortet der PC nicht, springt GitHub ein. */
+function chatBeobachten() {
+  clearTimeout(state.chat.timer);
+  if (!wartetAufAntwort()) return;
+  state.chat.timer = setTimeout(async () => {
+    await chatLaden();
+    const offen = aktuelleNachrichten().find((z) => z.rolle === "user" && z.status === "offen");
+    if (offen && state.chat.weg === "pc" && Date.now() - new Date(offen.created_at) > CHAT_NACHFASSEN_MS) {
+      const r = await chatFunktion({ nachfassen: true });
+      if (r.weg) state.chat.weg = r.weg;
+    }
+    if (state.view === "claude") renderClaude();
+    chatBeobachten();
+  }, 3000);
+}
+
+async function chatSenden(text) {
+  text = text.trim();
+  if (!text || state.chat.sendet) return;
+  if (!state.chat.gespraech) neuesGespraech(state.claudeThema);
+  const t = state.claudeThema;
+  state.chat.sendet = true;
+  const { error } = await client.from("catalyst_chat").insert({
+    gespraech: state.chat.gespraech, rolle: "user", text,
+    thema: t ? { art: t.art, ticker: t.ticker, name: t.name } : null });
+  state.chat.sendet = false;
+  if (error) { state.chat.fehler = `Senden fehlgeschlagen: ${error.message}`; renderClaude(); return; }
+  state.chat.fehler = "";
+  await chatLaden();
+  renderClaude();
+  const r = await chatFunktion();
+  state.chat.weg = r.weg || null;
+  renderClaude();
+  chatBeobachten();
+}
+
+async function gespraechLoeschen(id) {
+  await client.from("catalyst_chat").delete().eq("gespraech", id);
+  if (state.chat.gespraech === id) neuesGespraech();
+  await chatLaden();
   renderClaude();
 }
 
-/** Thema aus dem Verlauf wiederherstellen (nur Art/Ticker sind gespeichert). */
-function themaAus(t) {
-  if (!t) return null;
-  if (t.art === "aktie") {
-    const r = (state.feed.depot?.payload?.rows || []).find((p) => p.ticker === t.ticker);
-    return r ? { art: "aktie", ticker: r.ticker, name: r.name, r } : null;
+/** Claudes Antwort lesbar machen: Absätze, Listen, **fett** — alles über textContent. */
+function mdBlock(text) {
+  const box = el("div", "md");
+  const inline = (parent, zeile) => {
+    zeile.split(/(\*\*[^*]+\*\*)/g).forEach((t) => {
+      if (/^\*\*[^*]+\*\*$/.test(t)) parent.appendChild(el("b", null, t.slice(2, -2)));
+      else if (t) parent.appendChild(document.createTextNode(t.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, "$1 ($2)")));
+    });
+    return parent;
+  };
+  let liste = null;
+  for (const roh of text.split("\n")) {
+    const zeile = roh.trimEnd();
+    const punkt = zeile.match(/^\s*(?:[-*•]|\d+\.)\s+(.*)$/);
+    if (punkt) {
+      if (!liste) { liste = el("ul"); box.appendChild(liste); }
+      liste.appendChild(inline(el("li"), punkt[1]));
+      continue;
+    }
+    liste = null;
+    if (!zeile.trim()) continue;
+    const titel = zeile.match(/^#{1,4}\s+(.*)$/);
+    box.appendChild(titel ? el("p", "md-titel", titel[1].replace(/\*\*/g, "")) : inline(el("p"), zeile));
   }
-  const k = (state.feed.radar?.payload?.picks || []).find((p) => (p.ticker || p.asset) === t.ticker);
-  return k ? { art: "pick", ticker: t.ticker, name: k.asset, k } : null;
+  return box;
 }
 
 function renderClaude() {
   const view = $("view-claude");
   const entwurf = $("claude-frage")?.value || "";
   view.replaceChildren();
+  if (!state.chat.gespraech) state.chat.gespraech = localGet(GESPRAECH_KEY) || neueGespraechsId();
   const thema = state.claudeThema;
+  const nachrichten = aktuelleNachrichten();
 
   const kopf = el("div", "claude-kopf");
   const logo = el("span", "claude-dot gross");
   logo.appendChild(svgIcon(CLAUDE_ICON));
   const txt = el("div");
-  add(txt, el("h2", null, "Claude"),
-    el("p", "chart-sub", "Frag einfach los. Claude bekommt deinen ganzen Stand mit: Positionen, Einstand, Signale, Radar-Brille, KI-Checks, Picks und Meldungen."));
+  const status = !state.chat.bereit || state.chat.pcAn == null ? null
+    : state.chat.pcAn ? el("span", "chat-status an", "PC an · antwortet in Sekunden")
+      : el("span", "chat-status", "PC aus · Antworten über GitHub, ca. 1 Minute");
+  add(txt, el("h2", null, "Claude"), status,
+    el("p", "chart-sub", "Kennt dein ganzes Depot: Positionen, Einstand, Signale, Radar-Brille, KI-Checks, Picks und Meldungen."));
   add(kopf, logo, txt);
   view.appendChild(kopf);
 
+  // Gespräche: neues anfangen, frühere öffnen
+  const leiste = el("div", "chat-leiste");
+  const neu = el("button", "ghost", "Neues Gespräch");
+  neu.type = "button";
+  neu.addEventListener("click", () => { neuesGespraech(); renderClaude(); $("claude-frage")?.focus(); });
+  leiste.appendChild(neu);
+  const gruppen = new Map();
+  for (const z of state.chat.zeilen) {
+    if (!gruppen.has(z.gespraech)) gruppen.set(z.gespraech, { id: z.gespraech, titel: z.text, zeit: z.created_at, thema: z.thema });
+    gruppen.get(z.gespraech).zeit = z.created_at;
+  }
+  const frueher = [...gruppen.values()].filter((g) => g.id !== state.chat.gespraech).reverse();
+  if (frueher.length) {
+    const det = el("details", "chat-frueher");
+    det.appendChild(el("summary", "mehr", `Frühere Gespräche (${frueher.length})`));
+    for (const g of frueher) {
+      const z = el("div", "claude-gespraech");
+      const auf = el("button", "chat-oeffnen tippbar");
+      auf.type = "button";
+      add(auf, el("div", "pos-name", g.titel.length > 70 ? `${g.titel.slice(0, 70)} …` : g.titel),
+        el("div", "pos-line2", [g.thema?.name, fmtStamp(g.zeit)].filter(Boolean).join(" · ")));
+      auf.addEventListener("click", () => {
+        state.chat.gespraech = g.id;
+        localSet(GESPRAECH_KEY, g.id);
+        state.claudeThema = null;
+        renderClaude();
+      });
+      const weg = el("button", "icon-btn small", "×");
+      weg.type = "button";
+      weg.setAttribute("aria-label", "Gespräch löschen");
+      weg.addEventListener("click", () => gespraechLoeschen(g.id));
+      add(z, auf, weg);
+      det.appendChild(z);
+    }
+    leiste.appendChild(det);
+  }
+  view.appendChild(leiste);
+
+  if (!state.chat.bereit) {
+    view.appendChild(el("div", "card hint", "Der Chat in der App ist noch nicht eingerichtet. Bis dahin öffnet „Senden“ einen neuen Chat in der Claude-App."));
+  }
+
+  // Verlauf
+  const verlauf = el("div", "chat-verlauf");
+  for (const z of nachrichten) {
+    const blase = el("div", `blase ${z.rolle === "user" ? "du" : "claude"}${z.status === "fehler" && z.rolle === "claude" ? " fehler" : ""}`);
+    if (z.rolle === "user") {
+      if (z.thema?.name) blase.appendChild(el("div", "blase-thema", z.thema.name));
+      blase.appendChild(el("p", null, z.text));
+    } else {
+      blase.appendChild(mdBlock(z.text));
+      blase.appendChild(el("div", "blase-meta", `${fmtStamp(z.created_at)} · ${z.von === "github" ? "über GitHub" : "über deinen PC"}`));
+    }
+    verlauf.appendChild(blase);
+  }
+  if (wartetAufAntwort()) {
+    const laeuft = nachrichten.some((z) => z.rolle === "user" && z.status === "in_arbeit");
+    const wo = laeuft ? "Claude schreibt …" : state.chat.weg === "github" ? "Claude startet über GitHub – dauert etwa eine Minute …" : "Claude denkt nach …";
+    const b = el("div", "blase claude denkt");
+    add(b, el("span", "punkte"), el("p", null, wo));
+    verlauf.appendChild(b);
+  }
+  if (nachrichten.length) view.appendChild(verlauf);
+  if (state.chat.fehler) view.appendChild(el("div", "error banner", state.chat.fehler));
+
+  // Eingabe
   const box = el("form", "card claude-box");
   if (thema) {
     const chip = el("div", "claude-thema");
@@ -1481,64 +1641,42 @@ function renderClaude() {
   }
   const ta = document.createElement("textarea");
   ta.id = "claude-frage";
-  ta.rows = 3;
+  ta.rows = nachrichten.length ? 2 : 3;
   ta.value = entwurf;
-  ta.placeholder = thema ? `Was willst du zu ${thema.name} wissen?` : "Frag Claude zu deinem Depot …";
-  const senden = el("button", "claude-senden", "An Claude");
+  ta.placeholder = thema ? `Was willst du zu ${thema.name} wissen?` : nachrichten.length ? "Antworten …" : "Frag Claude zu deinem Depot …";
+  const senden = el("button", "claude-senden", "Senden");
   senden.type = "submit";
+  senden.disabled = !!state.chat.sendet;
   add(box, ta, senden);
-  box.addEventListener("submit", (e) => { e.preventDefault(); claudeFragen(ta.value, thema); ta.value = ""; });
+  const abschicken = (text) => {
+    if (state.chat.bereit) { chatSenden(text); ta.value = ""; } else inClaudeAppFragen(text, thema);
+  };
+  box.addEventListener("submit", (e) => { e.preventDefault(); abschicken(ta.value); });
 
-  const vorschlaege = thema
-    ? [`Wie ist die Lage bei ${thema.name}?`, "Warum bewegt sich der Kurs gerade so?", "Was steht als Nächstes an?", "Was spricht dafür, was dagegen?"]
-    : ["Wie steht mein Depot gerade?", "Wo ist mein größtes Klumpenrisiko?", "Was steht diese Woche an?", "Erklär mir die aktuellen Picks"];
-  const chips = el("div", "claude-chips");
-  for (const v of vorschlaege) {
-    const c = el("button", "claude-chip", v);
-    c.type = "button";
-    c.addEventListener("click", () => claudeFragen(v, thema));
-    chips.appendChild(c);
+  if (!nachrichten.length) {
+    const vorschlaege = thema
+      ? [`Wie ist die Lage bei ${thema.name}?`, "Warum bewegt sich der Kurs gerade so?", "Was steht als Nächstes an?", "Was spricht dafür, was dagegen?"]
+      : ["Wie steht mein Depot gerade?", "Wo ist mein größtes Klumpenrisiko?", "Was steht diese Woche an?", "Erklär mir die aktuellen Picks"];
+    const chips = el("div", "claude-chips");
+    for (const v of vorschlaege) {
+      const c = el("button", "claude-chip", v);
+      c.type = "button";
+      c.addEventListener("click", () => abschicken(v));
+      chips.appendChild(c);
+    }
+    box.appendChild(chips);
   }
-  box.appendChild(chips);
   view.appendChild(box);
 
-  const det = el("details", "card claude-wissen");
-  det.appendChild(el("summary", "mehr", "Was Claude mitbekommt"));
-  det.addEventListener("toggle", () => {
-    if (!det.open || det.querySelector("pre")) return;
-    const { voll } = claudeLink(ta.value, thema);
-    const kopieren = el("button", "ghost", "Kopieren");
-    kopieren.type = "button";
-    kopieren.addEventListener("click", () => navigator.clipboard?.writeText(voll).then(() => { kopieren.textContent = "Kopiert"; }).catch(() => {}));
-    add(det, el("pre", "claude-pre", voll), kopieren);
-  });
-  view.appendChild(det);
+  const app = el("button", "mehr claude-leeren", "Stattdessen in der Claude-App fragen");
+  app.type = "button";
+  app.addEventListener("click", () => inClaudeAppFragen(ta.value, thema));
+  view.appendChild(app);
+  view.appendChild(el("p", "note", "Läuft über dein Claude-Abo – keine Extrakosten. Claudes Antworten sind KI-Meinung, keine Anlageberatung. Die Entscheidung liegt bei dir."));
 
-  const liste = gespraeche();
-  if (liste.length) {
-    view.appendChild(el("div", "section-title", "Deine Gespräche"));
-    const lb = el("div", "ledger");
-    for (const g of liste) {
-      const z = el("div", "claude-gespraech tippbar");
-      add(z, el("div", "pos-name", g.frage || (g.thema ? `Lage bei ${g.thema.name}` : "Depot-Überblick")),
-        el("div", "pos-line2", [g.thema?.name, fmtStamp(g.zeit)].filter(Boolean).join(" · ")));
-      z.addEventListener("click", () => {
-        state.claudeThema = themaAus(g.thema);
-        renderClaude();
-        $("claude-frage").value = g.frage || "";
-        $("claude-frage").focus();
-      });
-      lb.appendChild(z);
-    }
-    view.appendChild(lb);
-    const leeren = el("button", "mehr claude-leeren", "Liste leeren");
-    leeren.type = "button";
-    leeren.addEventListener("click", () => { localSet(GESPRAECHE_KEY, "[]"); renderClaude(); });
-    view.appendChild(leeren);
+  if (state.view === "claude" && nachrichten.length) {
+    requestAnimationFrame(() => { const sc = $("scroller"); sc.scrollTop = sc.scrollHeight; });
   }
-  view.appendChild(el("p", "note", "Läuft über dein Claude-Abo – keine Extrakosten. Jede Frage öffnet einen neuen Chat in Claude; "
-    + "die Antworten findest du dort unter Chats. Kommt der Text nicht an, einfach einfügen – er liegt in der Zwischenablage. "
-    + "Claudes Antworten sind KI-Meinung, keine Anlageberatung."));
 }
 
 // --------------------------------------------------------------------------- //
@@ -1566,6 +1704,11 @@ async function load() {
     state.verlauf = verlauf.error ? [] : (verlauf.data || []).map((p) => ({
       datum: p.datum, wert: Number(p.wert_eur), einstand: Number(p.einstand_eur) }));
     applyLocalTrades();
+    await chatLaden();
+    if (state.chat.bereit) {
+      chatFunktion({ status: true }).then(() => { if (state.view === "claude") renderClaude(); });
+      chatBeobachten();
+    }
     try { await applyLiveQuotes(); } catch { state.live = { ok: false }; }
     livePunkt();
     if (!feed.data?.length && !meldungen.data?.length) {
