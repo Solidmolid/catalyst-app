@@ -124,7 +124,9 @@ function renderDepot() {
     const heute = priced.reduce((s, r) => (r.tag_pct == null ? s : s + r.wert_eur - r.wert_eur / (1 + r.tag_pct / 100)), 0);
     const gesamtPct = einstand ? (wert / einstand - 1) * 100 : null;
     const hero = el("div", "hero");
-    add(hero, el("div", "hero-label", "Depotwert"), el("div", "hero-value", fmtEur(wert)));
+    const label = el("div", "hero-label hero-label-claude");
+    add(label, el("span", null, "Depotwert"), claudePunkt({ art: "depot", ticker: null, name: "dein Depot" }));
+    add(hero, label, el("div", "hero-value", fmtEur(wert)));
     const sub = el("div", "hero-sub");
     const a = el("span", trend(heute)); add(a, el("b", null, `${heute >= 0 ? "+" : "−"}${fmtEur(Math.abs(heute))}`), document.createTextNode(" heute"));
     const b = el("span", trend(gesamtPct)); add(b, el("b", null, fmtPct(gesamtPct)), document.createTextNode(" seit Einstand"));
@@ -260,7 +262,9 @@ function positionRow(r, mitTermin) {
   const anteil = state.depotWert && r.wert_eur != null ? r.wert_eur / state.depotWert : null;
   const line2 = [r.ticker, anteil != null ? fmtShare(anteil) : null,
     mitTermin && r.termin ? `${r.termin_art || "Termin"} ${inDays(r.termin)}` : null].filter(Boolean).join(" · ");
-  add(s, el("div", "pos-name", r.name), el("div", "pos-value", fmtEur(r.wert_eur)),
+  const name = el("div", "pos-name", r.name);
+  name.appendChild(claudePunkt({ art: "aktie", ticker: r.ticker, name: r.name, r }));
+  add(s, name, el("div", "pos-value", fmtEur(r.wert_eur)),
     el("div", "pos-line2", line2), el("div", `pos-pct ${trend(r.gewinn_pct)}`, fmtPct(r.gewinn_pct)));
   // Lage-Signale (neutral): kurz an der Zeile, ausführlich beim Aufklappen
   const signale = r.signale || [];
@@ -1334,7 +1338,7 @@ function claudePunkt(thema, vorher) {
   b.addEventListener("click", (e) => {
     e.preventDefault(); e.stopPropagation();
     vorher?.();
-    neuesGespraech(thema);
+    neuesGespraech(thema.art === "depot" ? null : thema);
     switchView("claude");
     $("claude-frage")?.focus();
   });
