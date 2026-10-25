@@ -1543,6 +1543,97 @@ function mdBlock(text) {
   return box;
 }
 
+/** Alle Gespräche, neuestes zuerst — Titel = erste Frage. */
+function gespraechsListe() {
+  const gruppen = new Map();
+  for (const z of state.chat.zeilen) {
+    if (!gruppen.has(z.gespraech)) gruppen.set(z.gespraech, { id: z.gespraech, titel: z.text, zeit: z.created_at, thema: z.thema });
+    gruppen.get(z.gespraech).zeit = z.created_at;
+  }
+  return [...gruppen.values()].sort((a, b) => (a.zeit < b.zeit ? 1 : -1));
+}
+
+function tagesGruppe(ts) {
+  const tage = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(ts).setHours(0, 0, 0, 0)) / 86400000);
+  if (tage <= 0) return "Heute";
+  if (tage === 1) return "Gestern";
+  if (tage < 7) return "Diese Woche";
+  if (tage < 31) return "Diesen Monat";
+  return "Älter";
+}
+
+/** Seitenleiste von links wie in der Claude-App: neuer Chat oben, darunter alle Gespräche. */
+function chatLeisteOeffnen() {
+  const back = el("div", "sheet-backdrop");
+  const leiste = el("nav", "chat-drawer");
+  leiste.setAttribute("aria-label", "Gespräche");
+  const zu = () => { back.remove(); leiste.remove(); };
+  back.addEventListener("click", zu);
+
+  const neu = el("button", "drawer-neu");
+  neu.type = "button";
+  add(neu, svgIcon("M12 5v14M5 12h14"), el("span", null, "Neuer Chat"));
+  neu.addEventListener("click", () => { zu(); neuesGespraech(); renderClaude(); $("claude-frage")?.focus(); });
+  add(leiste, el("div", "drawer-titel", "Gespräche"), neu);
+
+  const liste = gespraechsListe();
+  if (!liste.length) leiste.appendChild(el("p", "note", "Noch keine Gespräche."));
+  let gruppe = "";
+  for (const g of liste) {
+    const name = tagesGruppe(g.zeit);
+    if (name !== gruppe) { gruppe = name; leiste.appendChild(el("div", "drawer-gruppe", name)); }
+    const zeile = el("div", `drawer-chat${g.id === state.chat.gespraech ? " aktiv" : ""}`);
+    const auf = el("button", "drawer-auf");
+    auf.type = "button";
+    add(auf, el("span", "drawer-name", g.titel), g.thema?.name ? el("span", "drawer-thema", g.thema.name) : null);
+    auf.addEventListener("click", () => {
+      zu();
+      state.chat.gespraech = g.id;
+      localSet(GESPRAECH_KEY, g.id);
+      state.claudeThema = null;
+      renderClaude();
+    });
+    const weg = el("button", "icon-btn small", "×");
+    weg.type = "button";
+    weg.setAttribute("aria-label", "Gespräch löschen");
+    weg.addEventListener("click", async () => { await gespraechLoeschen(g.id); zu(); chatLeisteOeffnen(); });
+    add(zeile, auf, weg);
+    leiste.appendChild(zeile);
+  }
+  document.body.append(back, leiste);
+}
+
+/** Spracheingabe über die Spracherkennung des Browsers (Safari/Chrome) — Text landet im Feld. */
+const Spracherkennung = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function mikrofonKnopf(ta) {
+  if (!Spracherkennung) return null;
+  const b = el("button", "chat-mic");
+  b.type = "button";
+  b.setAttribute("aria-label", "Sprechen");
+  b.appendChild(svgIcon("M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3"));
+  let erkennung = null;
+  b.addEventListener("click", () => {
+    if (erkennung) { erkennung.stop(); return; }
+    erkennung = new Spracherkennung();
+    erkennung.lang = "de-DE";
+    erkennung.interimResults = true;
+    erkennung.continuous = true;
+    const vorher = ta.value ? `${ta.value.trimEnd()} ` : "";
+    erkennung.onresult = (e) => {
+      let text = "";
+      for (const r of e.results) text += r[0].transcript;
+      ta.value = vorher + text;
+      ta.dispatchEvent(new Event("input"));
+    };
+    erkennung.onend = () => { erkennung = null; b.classList.remove("hoert"); };
+    erkennung.onerror = () => { erkennung = null; b.classList.remove("hoert"); };
+    b.classList.add("hoert");
+    erkennung.start();
+  });
+  return b;
+}
+
 function renderClaude() {
   const view = $("view-claude");
   const entwurf = $("claude-frage")?.value || "";
@@ -1551,61 +1642,41 @@ function renderClaude() {
   const thema = state.claudeThema;
   const nachrichten = aktuelleNachrichten();
 
-  const kopf = el("div", "claude-kopf");
-  const logo = el("span", "claude-dot gross");
-  logo.appendChild(svgIcon(CLAUDE_ICON));
-  const txt = el("div");
-  const status = !state.chat.bereit || state.chat.pcAn == null ? null
-    : state.chat.pcAn ? el("span", "chat-status an", "PC an · antwortet in Sekunden")
-      : el("span", "chat-status", "PC aus · Antworten über GitHub, ca. 1 Minute");
-  add(txt, el("h2", null, "Claude"), status,
-    el("p", "chart-sub", "Kennt dein ganzes Depot: Positionen, Einstand, Signale, Radar-Brille, KI-Checks, Picks und Meldungen."));
-  add(kopf, logo, txt);
-  view.appendChild(kopf);
-
-  // Gespräche: neues anfangen, frühere öffnen
-  const leiste = el("div", "chat-leiste");
-  const neu = el("button", "ghost", "Neues Gespräch");
+  // Kopfzeile wie in der Claude-App: links Gespräche, Mitte Titel, rechts neuer Chat
+  const kopf = el("div", "chat-kopf");
+  const menue = el("button", "icon-btn");
+  menue.type = "button";
+  menue.setAttribute("aria-label", "Gespräche");
+  menue.appendChild(svgIcon("M4 7h16M4 12h16M4 17h10"));
+  menue.addEventListener("click", chatLeisteOeffnen);
+  const titel = el("div", "chat-titel");
+  const ersteFrage = nachrichten.find((z) => z.rolle === "user")?.text;
+  titel.appendChild(el("div", "chat-titel-text", ersteFrage || (thema ? thema.name : "Neuer Chat")));
+  if (state.chat.bereit && state.chat.pcAn != null) {
+    titel.appendChild(el("div", `chat-status${state.chat.pcAn ? " an" : ""}`,
+      state.chat.pcAn ? "PC an · antwortet in Sekunden" : "PC aus · über GitHub, ca. 1 Minute"));
+  }
+  const neu = el("button", "icon-btn");
   neu.type = "button";
+  neu.setAttribute("aria-label", "Neuer Chat");
+  neu.appendChild(svgIcon("M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"));
   neu.addEventListener("click", () => { neuesGespraech(); renderClaude(); $("claude-frage")?.focus(); });
-  leiste.appendChild(neu);
-  const gruppen = new Map();
-  for (const z of state.chat.zeilen) {
-    if (!gruppen.has(z.gespraech)) gruppen.set(z.gespraech, { id: z.gespraech, titel: z.text, zeit: z.created_at, thema: z.thema });
-    gruppen.get(z.gespraech).zeit = z.created_at;
-  }
-  const frueher = [...gruppen.values()].filter((g) => g.id !== state.chat.gespraech).reverse();
-  if (frueher.length) {
-    const det = el("details", "chat-frueher");
-    det.appendChild(el("summary", "mehr", `Frühere Gespräche (${frueher.length})`));
-    for (const g of frueher) {
-      const z = el("div", "claude-gespraech");
-      const auf = el("button", "chat-oeffnen tippbar");
-      auf.type = "button";
-      add(auf, el("div", "pos-name", g.titel.length > 70 ? `${g.titel.slice(0, 70)} …` : g.titel),
-        el("div", "pos-line2", [g.thema?.name, fmtStamp(g.zeit)].filter(Boolean).join(" · ")));
-      auf.addEventListener("click", () => {
-        state.chat.gespraech = g.id;
-        localSet(GESPRAECH_KEY, g.id);
-        state.claudeThema = null;
-        renderClaude();
-      });
-      const weg = el("button", "icon-btn small", "×");
-      weg.type = "button";
-      weg.setAttribute("aria-label", "Gespräch löschen");
-      weg.addEventListener("click", () => gespraechLoeschen(g.id));
-      add(z, auf, weg);
-      det.appendChild(z);
-    }
-    leiste.appendChild(det);
-  }
-  view.appendChild(leiste);
+  add(kopf, menue, titel, neu);
+  view.appendChild(kopf);
 
   if (!state.chat.bereit) {
     view.appendChild(el("div", "card hint", "Der Chat in der App ist noch nicht eingerichtet. Bis dahin öffnet „Senden“ einen neuen Chat in der Claude-App."));
   }
 
-  // Verlauf
+  // Leerer Chat: Begrüßung und Vorschläge — sonst der Verlauf
+  if (!nachrichten.length) {
+    const hallo = el("div", "chat-hallo");
+    const logo = el("span", "claude-dot gross");
+    logo.appendChild(svgIcon(CLAUDE_ICON));
+    add(hallo, logo, el("h2", null, thema ? `Was willst du zu ${thema.name} wissen?` : "Wie kann ich helfen?"),
+      el("p", "chart-sub", "Ich kenne dein ganzes Depot: Positionen, Einstand, Signale, Radar-Brille, KI-Checks, Picks und Meldungen."));
+    view.appendChild(hallo);
+  }
   const verlauf = el("div", "chat-verlauf");
   for (const z of nachrichten) {
     const blase = el("div", `blase ${z.rolle === "user" ? "du" : "claude"}${z.status === "fehler" && z.rolle === "claude" ? " fehler" : ""}`);
@@ -1628,31 +1699,12 @@ function renderClaude() {
   if (nachrichten.length) view.appendChild(verlauf);
   if (state.chat.fehler) view.appendChild(el("div", "error banner", state.chat.fehler));
 
-  // Eingabe
-  const box = el("form", "card claude-box");
-  if (thema) {
-    const chip = el("div", "claude-thema");
-    const x = el("button", "icon-btn small", "×");
-    x.type = "button";
-    x.setAttribute("aria-label", "Thema entfernen");
-    x.addEventListener("click", () => { state.claudeThema = null; renderClaude(); });
-    add(chip, el("span", null, `Thema: ${thema.name}`), x);
-    box.appendChild(chip);
-  }
-  const ta = document.createElement("textarea");
-  ta.id = "claude-frage";
-  ta.rows = nachrichten.length ? 2 : 3;
-  ta.value = entwurf;
-  ta.placeholder = thema ? `Was willst du zu ${thema.name} wissen?` : nachrichten.length ? "Antworten …" : "Frag Claude zu deinem Depot …";
-  const senden = el("button", "claude-senden", "Senden");
-  senden.type = "submit";
-  senden.disabled = !!state.chat.sendet;
-  add(box, ta, senden);
+  // Eingabe unten: Vorschläge, Thema, Feld mit Mikrofon und Senden
+  const box = el("form", "chat-eingabe");
   const abschicken = (text) => {
+    if (!text.trim()) return;
     if (state.chat.bereit) { chatSenden(text); ta.value = ""; } else inClaudeAppFragen(text, thema);
   };
-  box.addEventListener("submit", (e) => { e.preventDefault(); abschicken(ta.value); });
-
   if (!nachrichten.length) {
     const vorschlaege = thema
       ? [`Wie ist die Lage bei ${thema.name}?`, "Warum bewegt sich der Kurs gerade so?", "Was steht als Nächstes an?", "Was spricht dafür, was dagegen?"]
@@ -1666,13 +1718,39 @@ function renderClaude() {
     }
     box.appendChild(chips);
   }
+  if (thema) {
+    const chip = el("div", "claude-thema");
+    const x = el("button", "icon-btn small", "×");
+    x.type = "button";
+    x.setAttribute("aria-label", "Thema entfernen");
+    x.addEventListener("click", () => { state.claudeThema = null; renderClaude(); });
+    add(chip, el("span", null, `Thema: ${thema.name}`), x);
+    box.appendChild(chip);
+  }
+  const feld = el("div", "chat-feld");
+  const ta = document.createElement("textarea");
+  ta.id = "claude-frage";
+  ta.rows = 1;
+  ta.value = entwurf;
+  ta.placeholder = nachrichten.length ? "Antworten …" : "Schreib Claude …";
+  const wachsen = () => { ta.style.height = "auto"; ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`; };
+  ta.addEventListener("input", wachsen);
+  const senden = el("button", "chat-senden");
+  senden.type = "submit";
+  senden.setAttribute("aria-label", "Senden");
+  senden.disabled = !!state.chat.sendet;
+  senden.appendChild(svgIcon("M12 19V5M5 12l7-7 7 7"));
+  add(feld, ta, mikrofonKnopf(ta), senden);
+  box.appendChild(feld);
+  box.addEventListener("submit", (e) => { e.preventDefault(); abschicken(ta.value); });
   view.appendChild(box);
+  requestAnimationFrame(wachsen);
 
   const app = el("button", "mehr claude-leeren", "Stattdessen in der Claude-App fragen");
   app.type = "button";
   app.addEventListener("click", () => inClaudeAppFragen(ta.value, thema));
-  view.appendChild(app);
-  view.appendChild(el("p", "note", "Läuft über dein Claude-Abo – keine Extrakosten. Claudes Antworten sind KI-Meinung, keine Anlageberatung. Die Entscheidung liegt bei dir."));
+  box.appendChild(app);
+  box.appendChild(el("p", "note chat-hinweis", "Über dein Claude-Abo · KI-Meinung, keine Anlageberatung"));
 
   if (state.view === "claude" && nachrichten.length) {
     requestAnimationFrame(() => { const sc = $("scroller"); sc.scrollTop = sc.scrollHeight; });
@@ -1737,6 +1815,7 @@ const ANSICHTEN = ["depot", "meldungen", "radar", "claude"];
 
 function switchView(name) {
   state.view = name;
+  document.body.dataset.ansicht = name;
   for (const b of document.querySelectorAll(".tabs button")) {
     b.setAttribute("aria-selected", String(b.dataset.view === name));
   }

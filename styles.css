@@ -535,3 +535,60 @@ details summary::-webkit-details-marker { display: none; }
 .claude-senden:disabled { opacity: 0.5; cursor: default; }
 
 .version { display: block; margin-top: 10px; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.7; }
+
+/* Claude-Chat wie in der Claude-App: Kopfzeile, Seitenleiste links, Eingabe unten */
+.chat-kopf { display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; gap: 6px; }
+.chat-titel { text-align: center; min-width: 0; }
+.chat-titel-text { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-titel .chat-status { margin: 0; }
+.chat-hallo { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 28px 12px 8px; }
+.chat-hallo h2 { font-family: var(--serif); font-weight: 400; font-size: 26px; margin: 4px 0 0; }
+.chat-eingabe {
+  position: sticky; bottom: 0; z-index: 5; display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 0 6px; background: linear-gradient(to bottom, transparent, var(--bg) 18px);
+}
+.chat-feld {
+  display: flex; align-items: flex-end; gap: 6px; padding: 6px 6px 6px 14px;
+  border: 1px solid var(--line-strong); border-radius: 24px; background: var(--surface);
+}
+.chat-feld:focus-within { border-color: var(--claude); }
+.chat-feld textarea {
+  flex: 1; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: 16px;
+  resize: none; padding: 8px 0; max-height: 160px; outline: none;
+}
+.chat-mic, .chat-senden {
+  flex: none; width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer;
+  display: grid; place-items: center; padding: 0;
+}
+.chat-mic { background: transparent; color: var(--ink2); }
+.chat-mic.hoert { background: var(--claude-soft); color: var(--claude); animation: atmen 1.2s ease-in-out infinite; }
+.chat-senden { background: var(--claude); color: #fff; }
+.chat-senden:disabled { opacity: 0.5; }
+.chat-mic svg, .chat-senden svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.chat-drawer {
+  position: fixed; z-index: 31; top: 0; bottom: 0; left: 0; width: min(84vw, 340px); overflow-y: auto;
+  background: var(--surface); border-right: 1px solid var(--line); box-shadow: var(--shadow);
+  padding: max(16px, env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 4px; animation: links 0.24s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes links { from { transform: translateX(-100%); } }
+.drawer-titel { font-family: var(--serif); font-size: 22px; padding: 4px 8px 10px; }
+.drawer-neu {
+  display: flex; align-items: center; gap: 10px; padding: 11px 12px; margin-bottom: 8px;
+  border: 0; border-radius: 12px; background: var(--claude); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+}
+.drawer-neu svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.drawer-gruppe { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); padding: 12px 8px 4px; }
+.drawer-chat { display: flex; align-items: center; border-radius: 10px; }
+.drawer-chat.aktiv { background: var(--surface-2); }
+.drawer-auf {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left;
+  border: 0; background: transparent; color: var(--ink); font: inherit; padding: 9px 8px; cursor: pointer;
+}
+.drawer-name { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawer-thema { font-size: 11.5px; color: var(--claude); }
+body[data-ansicht="claude"] .disclaimer { display: none; }
+#view-claude { min-height: calc(100dvh - 170px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+#view-claude .chat-eingabe { margin-top: auto; }
+.chat-eingabe .claude-leeren { align-self: center; font-size: 12.5px; }
+.chat-hinweis { text-align: center; font-size: 11px; }
