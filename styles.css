@@ -592,3 +592,11 @@ body[data-ansicht="claude"] .disclaimer { display: none; }
 #view-claude .chat-eingabe { margin-top: auto; }
 .chat-eingabe .claude-leeren { align-self: center; font-size: 12.5px; }
 .chat-hinweis { text-align: center; font-size: 11px; }
+.app { height: var(--app-h, 100dvh); }
+body.tippt .tabs, body.tippt .fab { display: none; }
+body.tippt #view-claude { min-height: 0; }
+.brille-skala { position: relative; height: 8px; margin: 10px 0 4px; border-radius: 4px;
+  background: linear-gradient(to right, var(--risiko-bg), var(--neutral-bg) 45%, var(--chance)); }
+.brille-marke { position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
+  background: var(--ink); border: 3px solid var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.brille-enden { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink3); }

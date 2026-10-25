@@ -298,12 +298,16 @@ function positionRow(r, mitTermin) {
   if (rb) {
     const box = el("div", "sig-box brille");
     const kopf = el("div", "brille-kopf");
-    add(kopf, el("span", "check-title", "Radar-Brille · wie bei den Kaufideen"), el("span", "brille-wert", `${rb.score}/100`));
-    const bar = el("div", "brille-bar");
-    const fill = el("span", rb.score >= 45 ? "gut" : "");
-    fill.style.width = `${Math.max(2, rb.score)}%`;
-    bar.appendChild(fill);
-    add(box, kopf, bar, el("p", "sig-text", rb.text));
+    add(kopf, el("span", "check-title", "Radar-Brille · früh oder spät dran?"), el("span", "brille-wert", `${rb.score}/100`));
+    const skala = el("div", "brille-skala");
+    const marke = el("span", "brille-marke");
+    marke.style.left = `${Math.max(2, Math.min(98, rb.score))}%`;
+    skala.appendChild(marke);
+    const enden = el("div", "brille-enden");
+    add(enden, el("span", null, "spät dran · schon gelaufen"), el("span", null, "früh dran · wie ein Pick"));
+    add(box, kopf, skala, enden, el("p", "sig-text", rb.text),
+      el("p", "sig-hinweis", "Misst nur die Lage: Ist die Aktie günstig und dreht gerade hoch (rechts) oder schon weit gelaufen bzw. ohne Schwung (links)? "
+        + "Ab 45 sähe sie aus wie ein frischer Radar-Pick. Kein Verkaufssignal — frag Claude, was das für deine Position heißt."));
     d.appendChild(box);
   }
   if (signale.length) {
@@ -1735,6 +1739,8 @@ function renderClaude() {
   ta.placeholder = nachrichten.length ? "Antworten …" : "Schreib Claude …";
   const wachsen = () => { ta.style.height = "auto"; ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`; };
   ta.addEventListener("input", wachsen);
+  ta.addEventListener("focus", () => document.body.classList.add("tippt"));
+  ta.addEventListener("blur", () => document.body.classList.remove("tippt"));
   const senden = el("button", "chat-senden");
   senden.type = "submit";
   senden.setAttribute("aria-label", "Senden");
@@ -1916,6 +1922,19 @@ if ("serviceWorker" in navigator) {
     neuGeladen = true;
     location.reload();
   });
+}
+
+// Tastatur auf dem Handy: App auf den sichtbaren Bereich schrumpfen, damit die
+// Eingabe direkt über der Tastatur sitzt (iOS verkleinert sonst nichts).
+if (window.visualViewport) {
+  const vv = window.visualViewport;
+  const anpassen = () => {
+    document.documentElement.style.setProperty("--app-h", `${vv.height}px`);
+    if (vv.offsetTop) window.scrollTo(0, 0);
+  };
+  vv.addEventListener("resize", anpassen);
+  vv.addEventListener("scroll", anpassen);
+  anpassen();
 }
 
 // localStorage kann im privaten Modus fehlen oder werfen — dann eben ohne Badge-Gedächtnis.
