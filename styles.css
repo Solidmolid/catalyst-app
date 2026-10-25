@@ -605,3 +605,11 @@ body.tippt .chat-eingabe .claude-leeren, body.tippt .chat-hinweis, body.tippt .c
 .hero-label-claude .claude-dot { width: 22px; height: 22px; }
 .pos-name .claude-dot { width: 20px; height: 20px; margin-left: 8px; vertical-align: middle; }
 .pos-name .claude-dot svg { width: 11px; height: 11px; }
+.chat-kopf { grid-template-columns: 76px 1fr 76px; }
+.chat-kopf-rechts { display: flex; justify-content: flex-end; }
+.chat-kopf .icon-btn { width: 38px; }
+/* Claude-Reiter füllt den Bildschirm, Eingabe sitzt direkt über der Leiste unten */
+body[data-ansicht="claude"] .scroller { display: flex; flex-direction: column; padding-bottom: 0; }
+body[data-ansicht="claude"] .scroller > * { width: 100%; }
+body[data-ansicht="claude"] #view-claude { flex: 1 0 auto; min-height: 0; }
+#view-claude .chat-eingabe { padding-bottom: 10px; }

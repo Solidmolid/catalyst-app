@@ -1669,7 +1669,15 @@ function renderClaude() {
   neu.setAttribute("aria-label", "Neuer Chat");
   neu.appendChild(svgIcon("M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"));
   neu.addEventListener("click", () => { neuesGespraech(); renderClaude(); $("claude-frage")?.focus(); });
-  add(kopf, menue, titel, neu);
+  const extern = el("button", "icon-btn");
+  extern.type = "button";
+  extern.setAttribute("aria-label", "In der Claude-App fragen");
+  extern.title = "In der Claude-App fragen";
+  extern.appendChild(svgIcon("M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"));
+  extern.addEventListener("click", () => inClaudeAppFragen($("claude-frage")?.value || "", thema));
+  const rechts = el("div", "chat-kopf-rechts");
+  add(rechts, extern, neu);
+  add(kopf, menue, titel, rechts);
   view.appendChild(kopf);
 
   if (!state.chat.bereit) {
@@ -1756,11 +1764,6 @@ function renderClaude() {
   view.appendChild(box);
   requestAnimationFrame(wachsen);
 
-  const app = el("button", "mehr claude-leeren", "Stattdessen in der Claude-App fragen");
-  app.type = "button";
-  app.addEventListener("click", () => inClaudeAppFragen(ta.value, thema));
-  box.appendChild(app);
-  box.appendChild(el("p", "note chat-hinweis", "Über dein Claude-Abo · KI-Meinung, keine Anlageberatung"));
 
   if (state.view === "claude" && nachrichten.length) {
     requestAnimationFrame(() => { const sc = $("scroller"); sc.scrollTop = sc.scrollHeight; });
