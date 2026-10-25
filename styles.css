@@ -32,6 +32,9 @@
   --grid: rgba(243, 239, 230, 0.06);
   --axis-line: rgba(243, 239, 230, 0.22);
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  /* Claude-Orange: nur für alles, was mit dem Claude-Gespräch zu tun hat */
+  --claude: #c96442;
+  --claude-soft: rgba(201, 100, 66, 0.18);
   color-scheme: dark;
 }
 
@@ -160,7 +163,7 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 /* Navigation unten — wie eine echte App */
 .tabs {
   flex: none; position: relative; z-index: 20;
-  display: grid; grid-template-columns: repeat(3, 1fr);
+  display: grid; grid-template-columns: repeat(4, 1fr);
   padding: 8px max(12px, env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom));
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   -webkit-backdrop-filter: saturate(160%) blur(18px); backdrop-filter: saturate(160%) blur(18px);
@@ -464,5 +467,48 @@ details summary::-webkit-details-marker { display: none; }
 .aktie-sheet .sheet-head { align-items: flex-start; }
 .aktie-sheet .sheet-head h2 { font-size: 24px; }
 .aktie-sheet .ac-wert { font-size: 32px; }
+
+/* --- Claude: Gespräch mit dem Depot-Wissen -------------------------------- */
+.claude-dot {
+  flex: none; width: 26px; height: 26px; border-radius: 50%; border: 0; cursor: pointer;
+  background: var(--claude); color: #fff; display: inline-grid; place-items: center; padding: 0;
+}
+.claude-dot svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.claude-dot:active { transform: scale(0.92); }
+.claude-dot.gross { width: 44px; height: 44px; cursor: default; }
+.claude-dot.gross svg { width: 22px; height: 22px; }
+.sheet-knoepfe { display: flex; align-items: center; gap: 6px; }
+.claude-kopf { display: flex; gap: 14px; align-items: flex-start; padding: 4px 2px 0; }
+.claude-kopf h2 { font-family: var(--serif); font-weight: 400; font-size: 24px; margin: 0 0 2px; }
+.claude-box { display: flex; flex-direction: column; gap: 10px; }
+.claude-box textarea {
+  font: inherit; font-size: 16px; padding: 12px 14px; border-radius: 12px; resize: vertical; min-height: 84px;
+  border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink); width: 100%;
+}
+.claude-box textarea:focus { outline: none; border-color: var(--claude); }
+.claude-senden {
+  align-self: flex-end; border: 0; border-radius: 12px; padding: 11px 18px; cursor: pointer;
+  background: var(--claude); color: #fff; font-weight: 600;
+}
+.claude-thema {
+  align-self: flex-start; display: flex; align-items: center; gap: 2px; padding-left: 12px;
+  border-radius: 10px; background: var(--claude-soft); color: var(--ink); font-size: 13px; font-weight: 600;
+}
+.claude-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.claude-chip {
+  border: 1px solid var(--line-strong); background: transparent; color: var(--ink2); cursor: pointer;
+  border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 13px; text-align: left;
+}
+.claude-chip:active { border-color: var(--claude); color: var(--ink); }
+.claude-wissen { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; }
+.claude-wissen .ghost { align-self: flex-start; padding: 8px 14px; }
+.claude-pre {
+  white-space: pre-wrap; word-break: break-word; font-family: var(--sans); font-size: 12px; color: var(--ink2);
+  max-height: 320px; overflow-y: auto; margin: 0; padding: 12px; border-radius: 12px; background: var(--bg);
+}
+.claude-gespraech { padding: 12px 16px; border-top: 1px solid var(--line); }
+.claude-gespraech:first-child { border-top: 0; }
+.claude-leeren { border: 0; background: transparent; cursor: pointer; align-self: flex-start; padding: 0 2px; }
+.tabs button[data-view="claude"][aria-selected="true"] { color: var(--claude); }
 
 .version { display: block; margin-top: 10px; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.7; }

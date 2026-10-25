@@ -18,7 +18,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon-v2.png" />
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
 <title>Catalyst</title>
-<link rel="stylesheet" href="styles.css?v=21" />
+<link rel="stylesheet" href="styles.css?v=22" />
 </head>
 <body>
 
@@ -63,11 +63,12 @@
   <section id="view-depot" class="view" role="tabpanel"></section>
   <section id="view-meldungen" class="view" role="tabpanel" hidden></section>
   <section id="view-radar" class="view" role="tabpanel" hidden></section>
+  <section id="view-claude" class="view" role="tabpanel" hidden></section>
 
   <footer class="disclaimer">
     Fakten, deine eigenen Marken und klar gekennzeichnete KI-Meinung —
     keine Anlageberatung. Die Entscheidung liegt bei dir.
-    <span class="version">App-Version 21</span>
+    <span class="version">App-Version 22</span>
   </footer>
   </div>
 
@@ -84,10 +85,14 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.5" /><path d="M12 12l6-6" /></svg>
       <span>Radar</span>
     </button>
+    <button type="button" role="tab" data-view="claude" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" /></svg>
+      <span>Claude</span>
+    </button>
   </nav>
 </main>
 
 <script src="vendor/supabase-2.110.3.js"></script>
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

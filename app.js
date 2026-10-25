@@ -338,7 +338,9 @@ function openAktieSheet(r, inhalt, chartBox) {
   x.type = "button";
   x.setAttribute("aria-label", "Schließen");
   x.addEventListener("click", close);
-  add(head, titel, x);
+  const knoepfe = el("div", "sheet-knoepfe");
+  add(knoepfe, claudePunkt({ art: "aktie", ticker: r.ticker, name: r.name, r }, close), x);
+  add(head, titel, knoepfe);
   add(sheet, el("div", "sheet-grip"), head, inhalt);
   document.body.append(back, sheet);
   aktienChart(chartBox, r);
@@ -1244,6 +1246,7 @@ function pickRow(k, neuestes) {
   if (k.seit && k.seit === neuestes) badges.appendChild(el("span", "tag neu", "Neu"));
   if (k.im_depot) badges.appendChild(el("span", "tag depot", "Im Depot"));
   if (k.label) badges.appendChild(el("span", `label ${lbl}`, `KI: ${k.label}`));
+  badges.appendChild(claudePunkt({ art: "pick", ticker: k.ticker || k.asset, name: k.asset, k }));
   add(head, name, badges);
   const meta = `${k.typ}${k.datum ? ` · ${fmtDay(k.datum)} · ${inDays(k.datum)}` : ""}`
     + (k.seit ? ` · eingeordnet ${fmtDay(k.seit)}` : "");
@@ -1305,6 +1308,240 @@ function bilanzCard() {
 }
 
 // --------------------------------------------------------------------------- //
+// Claude: Gespräch mit dem ganzen Depot-Wissen. Läuft über dein Claude-Abo —
+// die App baut Frage + Depot-Lage zusammen und öffnet damit einen neuen Chat in
+// Claude. Kein API-Schlüssel, keine Kosten pro Nachricht.
+// --------------------------------------------------------------------------- //
+const CLAUDE_NEU = "https://claude.ai/new?q=";
+const CLAUDE_MAX_URL = 8000;   // längere Links schneiden manche Browser ab
+const GESPRAECHE_KEY = "catalyst.claude.gespraeche";
+const CLAUDE_ICON = "M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4";
+
+/** Der kleine orange Punkt: öffnet den Claude-Reiter mit diesem Thema. */
+function claudePunkt(thema, vorher) {
+  const b = el("button", "claude-dot");
+  b.type = "button";
+  b.setAttribute("aria-label", `Mit Claude über ${thema.name} sprechen`);
+  b.title = "Mit Claude besprechen";
+  b.appendChild(svgIcon(CLAUDE_ICON));
+  b.addEventListener("click", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    vorher?.();
+    state.claudeThema = thema;
+    switchView("claude");
+    $("claude-frage")?.focus();
+  });
+  return b;
+}
+
+function kursSeit(ticker, zeitraum) {
+  const pts = chartPunkte(ticker, zeitraum);
+  if (!pts || pts.length < 2) return null;
+  return (pts[pts.length - 1][1] / pts[0][1] - 1) * 100;
+}
+
+function positionZeile(r, checks) {
+  const anteil = state.depotWert && r.wert_eur != null ? r.wert_eur / state.depotWert : null;
+  const teile = [
+    `Wert ${fmtEur(r.wert_eur)}${anteil != null ? ` (${fmtShare(anteil)} des Depots)` : ""}`,
+    `seit Einstand ${fmtPct(r.gewinn_pct)}`, `heute ${fmtPct(r.tag_pct)}`,
+    r.einstand_eur != null ? `Einstand ${fmtEur(r.einstand_eur)}` : null,
+    r.termin ? `${r.termin_art || "Termin"} am ${fmtDay(r.termin)}` : null,
+    (r.signale || []).length ? `Signale: ${r.signale.map((s) => s.kurz).join(", ")}` : null,
+    r.radar_brille ? `Radar-Brille ${r.radar_brille.score}/100` : null,
+  ];
+  const c = checks[r.ticker]?.[0];
+  if (c) teile.push(`KI-Check ${fmtDay(c.erstellt)}: ${c.label || "—"} – ${c.kurz}`);
+  return `- ${r.name} (${r.ticker}, ${r.typ === "etf" ? "ETF" : "Aktie"}): ${teile.filter(Boolean).join("; ")}`;
+}
+
+/** Alles, was Claude wissen soll — als Abschnitte in Wichtigkeits-Reihenfolge. */
+function claudeAbschnitte(thema) {
+  const rows = state.feed.depot?.payload?.rows || [];
+  const pos = rows.filter((r) => r.art === "position");
+  const watch = rows.filter((r) => r.art === "watchlist");
+  const checks = state.feed.checks?.payload?.checks || {};
+  const out = [];
+
+  if (thema?.art === "aktie") {
+    const r = pos.find((p) => p.ticker === thema.ticker) || thema.r;
+    const z = [`--- Im Fokus: ${r.name} (${r.ticker}) ---`, positionZeile(r, checks).slice(2)];
+    const kurse = [["1 Woche", "1W"], ["1 Monat", "1M"], ["6 Monate", "6M"], ["1 Jahr", "1J"], ["5 Jahre", "5J"]]
+      .map(([n, k]) => [n, kursSeit(r.ticker, k)]).filter(([, v]) => v != null);
+    if (kurse.length) z.push(`Kursentwicklung: ${kurse.map(([n, v]) => `${n} ${fmtPct(v)}`).join(", ")}`);
+    if (r.radar_brille?.text) z.push(`Radar-Brille: ${r.radar_brille.text}`);
+    for (const s of r.signale || []) z.push(`Lage-Signal: ${s.text}`);
+    const c = checks[r.ticker]?.[0];
+    if (c?.text) z.push(`Letzter KI-Check (${c.label || "—"}, ${fmtDay(c.erstellt)}): ${c.text}`);
+    out.push(z.join("\n"));
+  } else if (thema?.art === "pick") {
+    const k = thema.k;
+    const f = k.fakten || {};
+    const z = [`--- Im Fokus: Radar-Pick ${k.asset}${k.ticker ? ` (${k.ticker})` : ""} ---`,
+      `${k.typ}${k.datum ? ` am ${fmtDay(k.datum)}` : ""}${k.im_depot ? " · schon im Depot" : ""}`];
+    const fakten = [f.spanne != null ? `Jahresspanne ${f.spanne} %` : null,
+      f.trend_1m != null ? `1 Monat ${f.trend_1m} %` : null, f.trend_3m != null ? `3 Monate ${f.trend_3m} %` : null,
+      f.aufmerksamkeit != null ? `Aufmerksamkeit ${f.aufmerksamkeit}/100` : null].filter(Boolean);
+    if (fakten.length) z.push(`Fakten: ${fakten.join(", ")}`);
+    if (k.label) z.push(`KI-Einordnung: ${k.label} – ${k.kurz || ""}`);
+    if (k.text) z.push(k.text);
+    out.push(z.join("\n"));
+  }
+
+  if (pos.length) {
+    const cash = state.feed.depot.payload.cash;
+    const kopf = `--- Mein Depot (Stand ${fmtStamp(state.feed.depot.updated_at)}) ---\nDepotwert ${fmtEur(state.depotWert)}`
+      + (cash?.eur > 0 ? `, Cash ${fmtEur(cash.eur)}${cash.geschaetzt ? " (geschätzt)" : ""}` : "");
+    const sortiert = [...pos].sort((a, b) => (b.wert_eur || 0) - (a.wert_eur || 0));
+    out.push([kopf, ...sortiert.map((r) => positionZeile(r, checks))].join("\n"));
+  }
+  if (watch.length) out.push(`--- Watchlist ---\n${watch.map((r) => `- ${r.name} (${r.ticker}): ${fmtEur(r.kurs_eur)}, heute ${fmtPct(r.tag_pct)}`).join("\n")}`);
+
+  const picks = state.feed.radar?.payload?.picks || [];
+  if (picks.length) {
+    out.push(`--- Radar-Picks ---\n${picks.map((k) => `- ${k.asset}${k.ticker ? ` (${k.ticker})` : ""}: ${k.typ}${k.datum ? ` am ${fmtDay(k.datum)}` : ""}${k.label ? `, KI: ${k.label} – ${k.kurz || ""}` : ""}`).join("\n")}`);
+  }
+  if (state.meldungen.length) {
+    out.push(`--- Letzte Meldungen ---\n${state.meldungen.slice(0, 6).map((m) => `- ${fmtDay(m.created_at.slice(0, 10))} ${m.name}: ${m.text}`).join("\n")}`);
+  }
+  return out;
+}
+
+function claudeText(frage, thema) {
+  const f = frage.trim() || (thema ? `Lass uns über ${thema.name} sprechen. Wie ist die Lage gerade, und was sollte ich im Blick haben?`
+    : "Schau dir mein Depot an: Wie steht es gerade, und was sollte ich im Blick haben?");
+  const vorspann = "Ich nutze meine App „Catalyst“ (Depot-Überblick und Termin-Radar). Unten steht mein aktueller Stand aus der App. "
+    + "Nutze ihn als Wissen für unser Gespräch, recherchiere bei Bedarf aktuelle Nachrichten im Web und trenne klar zwischen Fakten und deiner Meinung. "
+    + "Keine Anlageberatung – die Entscheidung treffe ich selbst. Antworte auf Deutsch, kurz und verständlich.";
+  return { kopf: `${vorspann}\n\nMeine Frage: ${f}`, abschnitte: claudeAbschnitte(thema) };
+}
+
+/** Voller Text (für die Zwischenablage) und ein Link, der sicher in die URL passt. */
+function claudeLink(frage, thema) {
+  const { kopf, abschnitte } = claudeText(frage, thema);
+  const voll = [kopf, ...abschnitte].join("\n\n");
+  const teile = [kopf];
+  for (const a of abschnitte) {
+    if (encodeURIComponent([...teile, a].join("\n\n")).length + CLAUDE_NEU.length > CLAUDE_MAX_URL) break;
+    teile.push(a);
+  }
+  if (teile.length <= abschnitte.length) teile.push("(Gekürzt – den ganzen Stand füge ich gleich ein.)");
+  return { voll, url: CLAUDE_NEU + encodeURIComponent(teile.join("\n\n")) };
+}
+
+function gespraeche() {
+  try { return JSON.parse(localGet(GESPRAECHE_KEY) || "[]"); } catch { return []; }
+}
+
+function claudeFragen(frage, thema) {
+  const { voll, url } = claudeLink(frage, thema);
+  navigator.clipboard?.writeText(voll).catch(() => {});
+  window.open(url, "_blank", "noopener");
+  const liste = gespraeche();
+  liste.unshift({ zeit: Date.now(), frage: frage.trim(), thema: thema ? { art: thema.art, ticker: thema.ticker, name: thema.name } : null });
+  localSet(GESPRAECHE_KEY, JSON.stringify(liste.slice(0, 25)));
+  renderClaude();
+}
+
+/** Thema aus dem Verlauf wiederherstellen (nur Art/Ticker sind gespeichert). */
+function themaAus(t) {
+  if (!t) return null;
+  if (t.art === "aktie") {
+    const r = (state.feed.depot?.payload?.rows || []).find((p) => p.ticker === t.ticker);
+    return r ? { art: "aktie", ticker: r.ticker, name: r.name, r } : null;
+  }
+  const k = (state.feed.radar?.payload?.picks || []).find((p) => (p.ticker || p.asset) === t.ticker);
+  return k ? { art: "pick", ticker: t.ticker, name: k.asset, k } : null;
+}
+
+function renderClaude() {
+  const view = $("view-claude");
+  const entwurf = $("claude-frage")?.value || "";
+  view.replaceChildren();
+  const thema = state.claudeThema;
+
+  const kopf = el("div", "claude-kopf");
+  const logo = el("span", "claude-dot gross");
+  logo.appendChild(svgIcon(CLAUDE_ICON));
+  const txt = el("div");
+  add(txt, el("h2", null, "Claude"),
+    el("p", "chart-sub", "Frag einfach los. Claude bekommt deinen ganzen Stand mit: Positionen, Einstand, Signale, Radar-Brille, KI-Checks, Picks und Meldungen."));
+  add(kopf, logo, txt);
+  view.appendChild(kopf);
+
+  const box = el("form", "card claude-box");
+  if (thema) {
+    const chip = el("div", "claude-thema");
+    const x = el("button", "icon-btn small", "×");
+    x.type = "button";
+    x.setAttribute("aria-label", "Thema entfernen");
+    x.addEventListener("click", () => { state.claudeThema = null; renderClaude(); });
+    add(chip, el("span", null, `Thema: ${thema.name}`), x);
+    box.appendChild(chip);
+  }
+  const ta = document.createElement("textarea");
+  ta.id = "claude-frage";
+  ta.rows = 3;
+  ta.value = entwurf;
+  ta.placeholder = thema ? `Was willst du zu ${thema.name} wissen?` : "Frag Claude zu deinem Depot …";
+  const senden = el("button", "claude-senden", "An Claude");
+  senden.type = "submit";
+  add(box, ta, senden);
+  box.addEventListener("submit", (e) => { e.preventDefault(); claudeFragen(ta.value, thema); ta.value = ""; });
+
+  const vorschlaege = thema
+    ? [`Wie ist die Lage bei ${thema.name}?`, "Warum bewegt sich der Kurs gerade so?", "Was steht als Nächstes an?", "Was spricht dafür, was dagegen?"]
+    : ["Wie steht mein Depot gerade?", "Wo ist mein größtes Klumpenrisiko?", "Was steht diese Woche an?", "Erklär mir die aktuellen Picks"];
+  const chips = el("div", "claude-chips");
+  for (const v of vorschlaege) {
+    const c = el("button", "claude-chip", v);
+    c.type = "button";
+    c.addEventListener("click", () => claudeFragen(v, thema));
+    chips.appendChild(c);
+  }
+  box.appendChild(chips);
+  view.appendChild(box);
+
+  const det = el("details", "card claude-wissen");
+  det.appendChild(el("summary", "mehr", "Was Claude mitbekommt"));
+  det.addEventListener("toggle", () => {
+    if (!det.open || det.querySelector("pre")) return;
+    const { voll } = claudeLink(ta.value, thema);
+    const kopieren = el("button", "ghost", "Kopieren");
+    kopieren.type = "button";
+    kopieren.addEventListener("click", () => navigator.clipboard?.writeText(voll).then(() => { kopieren.textContent = "Kopiert"; }).catch(() => {}));
+    add(det, el("pre", "claude-pre", voll), kopieren);
+  });
+  view.appendChild(det);
+
+  const liste = gespraeche();
+  if (liste.length) {
+    view.appendChild(el("div", "section-title", "Deine Gespräche"));
+    const lb = el("div", "ledger");
+    for (const g of liste) {
+      const z = el("div", "claude-gespraech tippbar");
+      add(z, el("div", "pos-name", g.frage || (g.thema ? `Lage bei ${g.thema.name}` : "Depot-Überblick")),
+        el("div", "pos-line2", [g.thema?.name, fmtStamp(g.zeit)].filter(Boolean).join(" · ")));
+      z.addEventListener("click", () => {
+        state.claudeThema = themaAus(g.thema);
+        renderClaude();
+        $("claude-frage").value = g.frage || "";
+        $("claude-frage").focus();
+      });
+      lb.appendChild(z);
+    }
+    view.appendChild(lb);
+    const leeren = el("button", "mehr claude-leeren", "Liste leeren");
+    leeren.type = "button";
+    leeren.addEventListener("click", () => { localSet(GESPRAECHE_KEY, "[]"); renderClaude(); });
+    view.appendChild(leeren);
+  }
+  view.appendChild(el("p", "note", "Läuft über dein Claude-Abo – keine Extrakosten. Jede Frage öffnet einen neuen Chat in Claude; "
+    + "die Antworten findest du dort unter Chats. Kommt der Text nicht an, einfach einfügen – er liegt in der Zwischenablage. "
+    + "Claudes Antworten sind KI-Meinung, keine Anlageberatung."));
+}
+
+// --------------------------------------------------------------------------- //
 // Laden
 // --------------------------------------------------------------------------- //
 async function load() {
@@ -1340,6 +1577,7 @@ async function load() {
     state.loading = false;
     $("refresh").classList.remove("spinning");
     renderDepot(); renderMeldungen(); renderRadar(); updateBadge();
+    if (state.view === "claude") renderClaude();
   }
 }
 
@@ -1352,16 +1590,19 @@ function showError(text) {
 // --------------------------------------------------------------------------- //
 // Ansichten & Login
 // --------------------------------------------------------------------------- //
+const ANSICHTEN = ["depot", "meldungen", "radar", "claude"];
+
 function switchView(name) {
   state.view = name;
   for (const b of document.querySelectorAll(".tabs button")) {
     b.setAttribute("aria-selected", String(b.dataset.view === name));
   }
-  for (const v of ["depot", "meldungen", "radar"]) $(`view-${v}`).hidden = v !== name;
+  for (const v of ANSICHTEN) $(`view-${v}`).hidden = v !== name;
   if ($("fab")) $("fab").hidden = name !== "depot";
   $("scroller").scrollTo({ top: 0 });
   if (name === "meldungen") markSeen(); else updateBadge();
   if (name === "depot") renderDepot();   // Kurve braucht die sichtbare Breite
+  if (name === "claude") renderClaude();
 }
 
 function show(screen) {
@@ -1431,9 +1672,9 @@ document.addEventListener("visibilitychange", () => {
 
 // Tipp auf eine Mitteilung: passenden Reiter öffnen (?ansicht=… bzw. Nachricht vom Service Worker)
 const startAnsicht = new URLSearchParams(location.search).get("ansicht");
-if (["depot", "meldungen", "radar"].includes(startAnsicht)) state.view = startAnsicht;
+if (ANSICHTEN.includes(startAnsicht)) state.view = startAnsicht;
 navigator.serviceWorker?.addEventListener("message", (e) => {
-  if (["depot", "meldungen", "radar"].includes(e.data?.ansicht)) { switchView(e.data.ansicht); load(); }
+  if (ANSICHTEN.includes(e.data?.ansicht)) { switchView(e.data.ansicht); load(); }
 });
 
 client.auth.onAuthStateChange((event, session) => {
