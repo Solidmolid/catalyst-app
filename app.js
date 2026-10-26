@@ -1620,24 +1620,44 @@ function mikrofonKnopf(ta) {
   b.type = "button";
   b.setAttribute("aria-label", "Sprechen");
   b.appendChild(svgIcon("M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3"));
+  // iPhone: "continuous" bricht dort sofort ab — einmal tippen, sprechen, nach der
+  // Sprechpause steht der Text im Feld und bleibt dort, bis du "Senden" tippst.
+  const iphone = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
+  const FEHLER = { "not-allowed": "Mikrofon nicht erlaubt – in den iPhone-Einstellungen freigeben",
+    "service-not-allowed": "Spracherkennung ist auf dem Gerät aus", "no-speech": "Nichts gehört – nochmal tippen und sprechen",
+    "audio-capture": "Kein Mikrofon gefunden", network: "Spracherkennung braucht Internet" };
+  const platzhalter = ta.placeholder;
   let erkennung = null;
+  let gesagt = "";
+  const fertig = (hinweis) => {
+    erkennung = null;
+    b.classList.remove("hoert");
+    ta.placeholder = hinweis || platzhalter;
+    if (gesagt) ta.focus();
+  };
   b.addEventListener("click", () => {
     if (erkennung) { erkennung.stop(); return; }
-    erkennung = new Spracherkennung();
+    try {
+      erkennung = new Spracherkennung();
+    } catch { fertig("Spracherkennung geht hier nicht – nutze das Mikrofon der Tastatur"); return; }
     erkennung.lang = "de-DE";
     erkennung.interimResults = true;
-    erkennung.continuous = true;
+    erkennung.continuous = !iphone;
+    erkennung.maxAlternatives = 1;
     const vorher = ta.value ? `${ta.value.trimEnd()} ` : "";
+    gesagt = "";
     erkennung.onresult = (e) => {
       let text = "";
       for (const r of e.results) text += r[0].transcript;
-      ta.value = vorher + text;
+      gesagt = text.trim();
+      ta.value = vorher + gesagt;
       ta.dispatchEvent(new Event("input"));
     };
-    erkennung.onend = () => { erkennung = null; b.classList.remove("hoert"); };
-    erkennung.onerror = () => { erkennung = null; b.classList.remove("hoert"); };
+    erkennung.onend = () => fertig(gesagt ? "" : "Nichts verstanden – nochmal tippen");
+    erkennung.onerror = (e) => fertig(FEHLER[e.error] || "Spracherkennung abgebrochen – nochmal tippen");
     b.classList.add("hoert");
-    erkennung.start();
+    ta.placeholder = "Ich höre zu … sprich jetzt";
+    try { erkennung.start(); } catch { fertig("Spracherkennung abgebrochen – nochmal tippen"); }
   });
   return b;
 }
