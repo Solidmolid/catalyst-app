@@ -1,6 +1,6 @@
 /* Catalyst – Service Worker (App-Hülle offline, Daten immer frisch) */
 const CACHE_PREFIX = "catalyst-";
-const CACHE = "catalyst-v31";
+const CACHE = "catalyst-v32";
 const ASSETS = [
   "./",
   "./index.html",

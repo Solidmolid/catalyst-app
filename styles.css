@@ -614,3 +614,9 @@ body[data-ansicht="claude"] .scroller { display: flex; flex-direction: column; p
 body[data-ansicht="claude"] .scroller > * { width: 100%; }
 body[data-ansicht="claude"] #view-claude { flex: 1 0 auto; min-height: 0; }
 #view-claude .chat-eingabe { padding-bottom: 10px; }
+/* Chat steht starr: kein seitliches Wischen. Lange Links/Wörter brechen um statt die Seite zu verbreitern. */
+.scroller { overflow-x: hidden; touch-action: pan-y; }
+body[data-ansicht="claude"] .scroller { overscroll-behavior-x: none; }
+#view-claude, .chat-verlauf { max-width: 100%; min-width: 0; overflow-x: hidden; }
+.blase { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.blase a { overflow-wrap: anywhere; word-break: break-all; }
