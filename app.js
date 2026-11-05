@@ -467,7 +467,7 @@ function openTradeSheet() {
   const back = el("div", "sheet-backdrop");
   const sheet = el("div", "sheet");
   sheet.setAttribute("role", "dialog");
-  sheet.setAttribute("aria-label", "Kauf oder Verkauf eintragen");
+  sheet.setAttribute("aria-label", "Kauf, Verkauf oder Einzahlung eintragen");
   const close = () => { back.remove(); sheet.remove(); };
   back.addEventListener("click", close);
   const head = el("div", "sheet-head");
@@ -721,14 +721,22 @@ function tradeForm(positions, onDone) {
   const f = { art: "kauf", ticker: positions[0]?.ticker || "", name: positions[0]?.name || "", typ: positions[0]?.typ || "aktie" };
   const card = el("form", "trade-form");
 
-  // Kauf | Verkauf
-  const seg = el("div", "seg");
-  for (const [wert, text] of [["kauf", "Kauf"], ["verkauf", "Verkauf"]]) {
+  // Kauf | Verkauf | Einzahlung
+  const seg = el("div", "seg seg-3");
+  const wpTeile = [];          // Felder, die bei einer Einzahlung ausgeblendet werden
+  const setArt = (wert) => {
+    f.art = wert;
+    const geld = wert === "einzahlung";
+    for (const x of wpTeile) x.hidden = geld || (x === neuBox && sel.value !== "__neu__");
+    kurs.required = !geld;
+    updateStueck();
+  };
+  for (const [wert, text] of [["kauf", "Kauf"], ["verkauf", "Verkauf"], ["einzahlung", "Einzahlung"]]) {
     const b = el("button", `seg-btn${wert === f.art ? " is-active" : ""}`, text);
     b.type = "button";
     b.addEventListener("click", () => {
-      f.art = wert;
       for (const x of seg.children) x.classList.toggle("is-active", x === b);
+      setArt(wert);
     });
     seg.appendChild(b);
   }
@@ -744,7 +752,8 @@ function tradeForm(positions, onDone) {
   const neuOpt = el("option", null, "Neue Aktie / ETF suchen …");
   neuOpt.value = "__neu__";
   sel.appendChild(neuOpt);
-  card.appendChild(field("Wertpapier", sel));
+  const wpFeld = field("Wertpapier", sel);
+  card.appendChild(wpFeld);
 
   const neuBox = el("div", "neu-box");
   neuBox.hidden = positions.length > 0;
@@ -761,10 +770,13 @@ function tradeForm(positions, onDone) {
   const kurs = input("number", { min: "0.0001", step: "any", inputmode: "decimal", placeholder: "Kurs je Stück in €", required: "" });
   const datum = input("date", { value: todayIso(), max: todayIso(), required: "" });
   const stueck = el("p", "pos-note", "");
-  add(card, field("Betrag (€)", betrag), field("Kurs (€ je Stück)", kurs), field("Datum", datum), stueck);
+  const kursFeld = field("Kurs (€ je Stück)", kurs);
+  add(card, field("Betrag (€)", betrag), kursFeld, field("Datum", datum), stueck);
+  wpTeile.push(wpFeld, neuBox, kursFeld, stueck);
 
   const updateStueck = () => {
     const b = parseFloat(betrag.value), k = parseFloat(kurs.value);
+    if (f.art === "einzahlung") { stueck.textContent = ""; return; }
     stueck.textContent = b > 0 && k > 0 ? `= ${(b / k).toLocaleString("de-DE", { maximumFractionDigits: 6 })} Stück` : "";
   };
   betrag.addEventListener("input", updateStueck);
@@ -814,6 +826,27 @@ function tradeForm(positions, onDone) {
     e.preventDefault();
     err.hidden = true;
     const b = parseFloat(betrag.value), k = parseFloat(kurs.value);
+    if (f.art === "einzahlung") {
+      if (!(b > 0)) { err.textContent = "Der Betrag muss größer als 0 sein."; err.hidden = false; return; }
+      save.disabled = true;
+      save.textContent = "Wird gespeichert …";
+      const { error } = await client.from("catalyst_trades").insert({
+        art: "einzahlung", ticker: "EUR", name: "Einzahlung", typ: "aktie",
+        betrag_eur: b, kurs_eur: 1, datum: datum.value || todayIso(),
+      });
+      save.disabled = false;
+      save.textContent = "Speichern";
+      if (error) {
+        err.textContent = /check constraint/i.test(error.message)
+          ? "Einzahlungen sind in Supabase noch nicht freigeschaltet (SQL einmal ausführen)."
+          : `Speichern fehlgeschlagen: ${error.message}`;
+        err.hidden = false;
+        return;
+      }
+      onDone?.();
+      await load();
+      return;
+    }
     if (!f.ticker) { err.textContent = "Bitte ein Wertpapier wählen bzw. suchen."; err.hidden = false; return; }
     if (!(b > 0) || !(k > 0)) { err.textContent = "Betrag und Kurs müssen größer als 0 sein."; err.hidden = false; return; }
     save.disabled = true;
@@ -842,17 +875,20 @@ function tradeList() {
   for (const t of [...state.trades].reverse()) {
     const item = el("div", "trade-item");
     const txt = el("div");
+    const geld = t.art === "einzahlung" || t.art === "auszahlung";
     const stk = (t.betrag_eur / t.kurs_eur).toLocaleString("de-DE", { maximumFractionDigits: 4 });
+    const artText = { kauf: "Kauf", verkauf: "Verkauf", einzahlung: "Einzahlung", auszahlung: "Auszahlung" }[t.art] || t.art;
     add(txt,
-      el("time", null, `${fmtDay(t.datum)} · ${t.art === "kauf" ? "Kauf" : "Verkauf"}`),
-      el("div", null, `${t.name || t.ticker}: ${fmtEur(t.betrag_eur)} zu ${fmtEur(t.kurs_eur)} (${stk} Stk.)`));
+      el("time", null, `${fmtDay(t.datum)} · ${artText}`),
+      el("div", null, geld ? `${fmtEur(t.betrag_eur)} aufs Verrechnungskonto${t.art === "auszahlung" ? " (raus)" : ""}`
+        : `${t.name || t.ticker}: ${fmtEur(t.betrag_eur)} zu ${fmtEur(t.kurs_eur)} (${stk} Stk.)`));
     if (seit && new Date(t.created_at) > seit) txt.appendChild(el("small", "muted", "schon eingerechnet — Catalyst übernimmt es beim nächsten Lauf"));
     const del = el("button", "icon-btn small", "×");
     del.type = "button";
     del.title = "Eintrag löschen";
     del.addEventListener("click", async () => {
       if (!confirm(`Eintrag löschen?
-${t.name || t.ticker}, ${fmtEur(t.betrag_eur)}`)) return;
+${geld ? artText : (t.name || t.ticker)}, ${fmtEur(t.betrag_eur)}`)) return;
       const { error } = await client.from("catalyst_trades").delete().eq("id", t.id);
       if (error) { showError(`Löschen fehlgeschlagen: ${error.message}`); return; }
       await load();
@@ -873,6 +909,10 @@ function applyLocalTrades() {
   const rows = p.rows || (p.rows = []);
   const neu = state.trades.filter((t) => new Date(t.created_at) > seit && (!p.stand || t.datum > p.stand));
   for (const t of neu) {
+    if (t.art === "einzahlung" || t.art === "auszahlung") {
+      if (p.cash && p.cash.eur != null) p.cash.eur += (t.art === "einzahlung" ? 1 : -1) * t.betrag_eur;
+      continue;
+    }
     const stk = t.betrag_eur / t.kurs_eur;
     let r = rows.find((x) => x.art === "position" && x.ticker === t.ticker);
     let delta = 0;
